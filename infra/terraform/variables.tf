@@ -14,6 +14,12 @@ variable "image" {
   description = "Container image for the API and worker. Both roles share one image so the worker cannot drift from the code that produced the evidence."
 }
 
+variable "console_image" {
+  type        = string
+  default     = "us-docker.pkg.dev/cloudrun/container/hello:latest"
+  description = "Container image for the investigation console (nginx serving the built React app, proxying /api and /health to the API service)."
+}
+
 variable "llm_provider" {
   type        = string
   default     = "gemini"

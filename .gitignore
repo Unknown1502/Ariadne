@@ -19,3 +19,4 @@ tfplan*
 dist/
 build/
 .coverage
+*.tsbuildinfo

@@ -1,0 +1,34 @@
+# Templated by nginx's own envsubst entrypoint hook: ${PORT}, ${API_ORIGIN}, and ${API_HOST}
+# are substituted from the container's environment before nginx starts.
+
+server {
+    listen ${PORT};
+    server_name _;
+    root /usr/share/nginx/html;
+
+    # A single-page app: any path that isn't a real static file falls back to index.html so
+    # client-side routing works on a hard refresh or a deep link.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Host must be the API's own hostname, not `$host` (the console's incoming Host header).
+    # Cloud Run's edge routes every request by Host header across all services in the
+    # project - forwarding the console's own hostname on the outgoing proxied request made
+    # the edge route it straight back to the console itself, an infinite loop that only
+    # stopped when Google's own abuse protection started returning 429. Found by reading the
+    # nginx access log: every entry showed a longer X-Forwarded-For chain than the last, all
+    # within the same fraction of a second - the signature of a request bouncing through the
+    # same hop repeatedly rather than reaching a different backend.
+    location /api/ {
+        proxy_pass ${API_ORIGIN}/api/;
+        proxy_set_header Host ${API_HOST};
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /health {
+        proxy_pass ${API_ORIGIN}/health;
+        proxy_set_header Host ${API_HOST};
+    }
+}

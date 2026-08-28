@@ -367,6 +367,44 @@ resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
   member   = "allUsers"
 }
 
+# The investigation console. Holds no state of its own and reaches Firestore, Cloud SQL, and
+# Pub/Sub only indirectly, through the API - so unlike the api service it runs as the
+# project's default compute identity rather than one of the four cognitive-role service
+# accounts, and needs no Vertex AI, Cloud SQL, Firestore, or Pub/Sub grants at all.
+resource "google_cloud_run_v2_service" "console" {
+  name     = "ariadne-console"
+  location = var.region
+
+  template {
+    scaling {
+      min_instance_count = 0
+      max_instance_count = 2
+    }
+
+    containers {
+      image = var.console_image
+
+      resources {
+        limits = {
+          cpu    = "1"
+          # Cloud Run's default CPU-always-allocated mode refuses under 512Mi.
+          memory = "512Mi"
+        }
+      }
+    }
+  }
+
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_cloud_run_v2_service_iam_member" "console_public_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.console.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+
 resource "google_billing_budget" "guardrail" {
   count           = var.billing_account == "" ? 0 : 1
   billing_account = var.billing_account
@@ -392,6 +430,11 @@ resource "google_billing_budget" "guardrail" {
 output "api_url" {
   value       = google_cloud_run_v2_service.api.uri
   description = "Cloud Run URL. /health and /api/v1/system are the proof endpoints."
+}
+
+output "console_url" {
+  value       = google_cloud_run_v2_service.console.uri
+  description = "The investigation console. Proxies /api and /health to api_url."
 }
 
 output "service_accounts" {
