@@ -4,18 +4,23 @@ Prompt 17, run as a hostile pass over the repository rather than a summary of it
 was to look for **claims the code does not honour** — docstrings, docs, and config options
 that promise something no code path delivers.
 
-That framing found eight. Six were real, and five of those were of the same shape:
+That framing found nine. Seven were real, and five of those were of the same shape:
 *a capability that is described confidently and implemented partially or not at all.* For a
 project whose entire thesis is "explanations should have to prove themselves", that is the
 most damaging class of defect there is.
 
-All six are fixed. Findings are listed with the evidence that proved them.
+All seven are fixed. Findings are listed with the evidence that proved them.
 
 The pattern recurred three times before it was automated away. F1 was found by reading the
 adapter list; F2 by asking "where else?" straight after; F8 by finally writing the twenty-line
 script that answers the question for every setting at once. The lesson is not that these were
 subtle - it is that a human check which has to be *remembered* will be forgotten, and the
 third occurrence is the one that should have been a test the first time.
+
+F9 is a different species: not a missing implementation, but two present ones that were
+never checked against the systems they talk to. Verified against live SDK documentation
+rather than memory, because the two adapters this project cannot run locally are exactly
+where "675 tests pass" stops being evidence of correctness.
 
 ---
 
@@ -166,6 +171,48 @@ check is now automated rather than remembered.
 The SSE endpoint works; the console polls instead, because polling makes "the page only
 reads" easy to verify and needs no reconnection logic. Left in place as a working endpoint
 rather than deleted or claimed as the console's mechanism.
+
+### F9 — Two cloud adapters, written from memory, never run against the real SDK · **CRITICAL** · fixed
+
+`GeminiClient` and `FirestoreRuntimeStore` are the two integrations this system cannot
+demonstrate locally, so both were checked against live google-genai and
+google-cloud-firestore documentation (via Context7) rather than trusted as written. Two real
+defects turned up, both invisible to 675 passing tests because the test doubles were shaped
+by the same assumptions as the code they stood in for.
+
+**Gemini: `finish_reason` was never read.** It lives on `response.candidates[0]`, not on the
+response itself, so nothing checked it. A response truncated at `max_output_tokens` arrives
+as JSON cut off mid-structure — indistinguishable from malformed JSON to the parser. That
+was classified retryable. Every agent runs at temperature 0, so a retry reproduces the
+identical truncation, and the loop budget drains reproducing a certainty. The operator then
+reads "malformed JSON" and looks for a prompt bug that isn't there. Fixed by reading
+`finish_reason` and `prompt_feedback.block_reason` and raising a new `AgentResponseRejected`
+(non-retryable, but *recorded* — an unaudited rejection would recreate F4 on the one path
+that actually calls a real model) that names the real cause and points at the actual fix
+(`GEMINI_MAX_OUTPUT_TOKENS`).
+
+**Firestore: caught the wrong exception class.** `create()` raises
+`google.api_core.exceptions.Conflict` — confirmed from Firestore's own gRPC error mapping,
+`ALREADY_EXISTS -> Conflict`. The adapter caught `AlreadyExists`, a *subclass* of `Conflict`.
+Catching a subclass does not catch the parent, so on the Firestore path, the second worker
+racing for an idempotency key got an unhandled exception instead of the `None` meaning
+"already claimed" — duplicate-event safety, this project's headline reliability guarantee,
+was broken on cloud infrastructure while every local test passed. It passed because the test
+double raised a bare `DocumentExists` that happened to satisfy the buggy handler, making the
+fake more forgiving than the system it modelled. Both the adapter (now catches `Conflict`,
+the wider and correct catch) and the double (now raises a `FakeConflict` that mirrors the
+real subclass relationship) were fixed together — fixing one without the other would have
+left the bug re-hideable behind a too-forgiving fake.
+
+**What this changes about the rest of the audit.** F1–F8 were found by asking "does this
+code path get exercised by anything?" F9 asks the sharper question underneath that: *for a
+path that is exercised only by a hand-written double, does the double enforce the same
+constraints as the real dependency?* A test suite proves code does what its doubles expect.
+It does not prove the doubles are honest. That gap is now closed for both cloud adapters and
+recorded as a method — `docs/limitations.md` states plainly that the doubles cover adapter
+*logic*, not the real services, and both fixes shipped with tests that reproduce the actual
+failure shape (a truncated `finish_reason`, a real `Conflict`/`AlreadyExists` hierarchy)
+rather than the sanitized shape the original code happened to handle.
 
 ---
 
