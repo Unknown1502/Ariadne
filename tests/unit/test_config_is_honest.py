@@ -219,3 +219,42 @@ class TestEnvExampleMatchesReality:
         documented = set(re.findall(r"^([A-Z][A-Z0-9_]+)=", example, re.MULTILINE))
         stale = documented - declared
         assert not stale, f".env.example documents settings that no longer exist: {stale}"
+
+
+class TestAppStateHonoursRuntimeStoreSetting:
+    """AppState.__init__ once hardcoded LocalRuntimeStore, ignoring RUNTIME_STORE entirely.
+
+    `/api/v1/system` reported "firestore" while every investigation, idempotency claim,
+    and experiment checkpoint was actually written to the container's own ephemeral
+    filesystem - durable-looking while an instance stayed warm, silently gone the moment
+    Cloud Run replaced it. Found by checking whether a live deployment's data survived a
+    scale-down/scale-up cycle, not by reading the file: `self.runtime =
+    LocalRuntimeStore(...)` looks exactly as correct as `self.runtime =
+    open_runtime_store(...)` at a glance, and `backend/storage/runtime.py`'s factory
+    function - which does branch on RUNTIME_STORE correctly - was simply never called from
+    the one place that matters.
+
+    A full AppState() needs a real database and event bus, so this checks the same property
+    the config-honesty tests above check: not by running the code, but by asserting the
+    source can no longer regress into the shape that caused it.
+    """
+
+    def test_appstate_does_not_construct_localruntimestore_directly(self) -> None:
+        source = (REPO / "backend" / "api" / "main.py").read_text(encoding="utf-8")
+        assert "LocalRuntimeStore(" not in source, (
+            "AppState must not construct LocalRuntimeStore directly - it bypasses "
+            "RUNTIME_STORE entirely. Use open_runtime_store(clock=...) instead, which "
+            "dispatches on the configured setting."
+        )
+
+    def test_appstate_builds_its_runtime_store_through_the_factory(self) -> None:
+        source = (REPO / "backend" / "api" / "main.py").read_text(encoding="utf-8")
+        assert "self.runtime = open_runtime_store(" in source
+
+    def test_the_factory_it_calls_actually_dispatches_on_the_setting(self) -> None:
+        # Guards the guard: confirms open_runtime_store itself still branches correctly,
+        # so this test file can't pass by pointing at a factory that regressed too.
+        source = (REPO / "backend" / "storage" / "runtime.py").read_text(encoding="utf-8")
+        factory = source.split("def open_runtime_store", 1)[1]
+        assert 'settings.runtime_store == "firestore"' in factory
+        assert "FirestoreRuntimeStore" in factory

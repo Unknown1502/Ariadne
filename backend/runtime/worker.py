@@ -42,7 +42,7 @@ from backend.events.schemas import (
 from backend.experiment_engine.target_model import STANDING_EXPLANATION
 from backend.lineage.service import LineageService
 from backend.runtime.orchestrator import InvestigationPipeline, InvestigationRequest
-from backend.storage.runtime import LocalRuntimeStore
+from backend.storage.runtime import RuntimeStateStore
 
 WORKER_ID_PREFIX = "worker"
 
@@ -64,7 +64,7 @@ class AriadneWorker:
         self,
         *,
         pipeline: InvestigationPipeline,
-        runtime: LocalRuntimeStore,
+        runtime: RuntimeStateStore,
         lineage: LineageService,
         bus: EventBus | None = None,
         clock: Clock | None = None,
@@ -309,7 +309,7 @@ class AriadneWorker:
 def build_worker(
     *,
     pipeline: InvestigationPipeline,
-    runtime: LocalRuntimeStore,
+    runtime: RuntimeStateStore,
     lineage: LineageService,
     bus: EventBus | None = None,
     clock: Clock | None = None,

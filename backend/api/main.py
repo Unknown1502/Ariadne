@@ -46,7 +46,7 @@ from backend.runtime.worker import (
     emit_explanation_received,
     emit_model_version_deployed,
 )
-from backend.storage.runtime import LocalRuntimeStore
+from backend.storage.runtime import open_runtime_store
 from backend.storage.sql import open_ledger
 
 logger = get_logger("ariadne.api")
@@ -62,7 +62,15 @@ class AppState:
         self.settings = settings
         self.clock = SystemClock()
         self.ledger = open_ledger()
-        self.runtime = LocalRuntimeStore(settings.runtime_dir, clock=self.clock)
+        # Built from configuration, like the event bus below - constructing LocalRuntimeStore
+        # directly here meant RUNTIME_STORE=firestore was silently ignored while
+        # /api/v1/system reported "firestore" to the console. Every investigation,
+        # idempotency claim, and experiment checkpoint was actually written to the
+        # container's own ephemeral filesystem instead: durable-looking while the same
+        # instance stayed warm, and gone the moment Cloud Run replaced it. Found by checking
+        # a live deployment's data survived a scale-down/scale-up cycle, not by reading this
+        # file - it looked identical to the correct version at a glance.
+        self.runtime = open_runtime_store(clock=self.clock)
         self.lineage = LineageService(self.ledger, clock=self.clock)
         self.registry = AgentRegistry.with_defaults()
         self.pipeline = build_pipeline(

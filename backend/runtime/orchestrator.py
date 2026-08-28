@@ -57,7 +57,7 @@ from backend.governance.governor import (
     build_approval_request,
 )
 from backend.lineage.service import LineageService
-from backend.storage.runtime import LocalRuntimeStore, ScheduledAudit
+from backend.storage.runtime import RuntimeStateStore, ScheduledAudit
 from backend.storage.sql import EvidenceLedger
 from backend.verifier.verifier import generate_verdict
 
@@ -107,7 +107,7 @@ class InvestigationPipeline:
         self,
         *,
         ledger: EvidenceLedger,
-        runtime: LocalRuntimeStore,
+        runtime: RuntimeStateStore,
         lineage: LineageService,
         debt: DebtCalculator,
         governor: Governor,
@@ -476,7 +476,7 @@ class InvestigationPipeline:
 def build_pipeline(
     *,
     ledger: EvidenceLedger,
-    runtime: LocalRuntimeStore,
+    runtime: RuntimeStateStore,
     clock: Clock,
     llm=None,
     policy=None,
