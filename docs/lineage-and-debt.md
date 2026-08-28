@@ -79,6 +79,12 @@ A claim contradicted on v1 comes out around 0.75 and is re-tested first. This is
 to "where is the agent?" — not that something ran, but that it chose *what* to run based on
 what it remembered.
 
+Whether that choice is worth anything is a separate, checkable question:
+`benchmark/audit_priority_comparison.py` runs this exact formula against round-robin
+scheduling under a constrained audit budget and finds a mean 75.8% reduction in audits
+needed to re-test every previously-contradicted family (`docs/limitations.md` has the
+scope and caveats).
+
 ## Explanation Debt
 
 A decomposable operational risk score in [0, 100]. It answers one question: given everything

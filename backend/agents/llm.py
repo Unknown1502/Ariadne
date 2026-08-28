@@ -154,7 +154,7 @@ class GeminiClient:
         if self._client is not None:
             return self._client
         try:
-            from google import genai  # type: ignore[import-not-found]
+            from google import genai  # type: ignore[import-not-found,attr-defined]
         except ImportError as exc:  # pragma: no cover - requires the gcp extra
             raise AgentOutputError(
                 "google-genai is not installed; install the 'gcp' extra or set "

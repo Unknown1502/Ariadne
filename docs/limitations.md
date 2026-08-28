@@ -37,9 +37,19 @@ encode an opinion about which explanation problems matter most. Every snapshot r
 policy version, and changing weights requires a new version, because two incomparable scores
 that look comparable are worse than no score.
 
-**Audit priority is a heuristic.** The additive scheme in `lineage-and-debt.md` is a
-reasonable ordering, not an optimal allocation of audit budget. It has not been evaluated
-against alternatives.
+**Audit priority is a heuristic — now measured against the alternative.**
+`benchmark/audit_priority_comparison.py` runs the real, unmodified `audit_priority()` against
+real `LineageEntry` rows in a real ledger, across 20 independently seeded synthetic
+populations of 200 claim families each, and compares it to round-robin scheduling under a
+constrained per-round audit budget. Result: a mean 75.8% reduction in audits needed to
+re-test every previously-contradicted family, with those families landing at the 10th
+percentile of audit order under lineage priority versus an essentially uniform 49th under
+round-robin (`var/audit-priority/audit-priority.md` after running it). What this does *not*
+establish: that the additive scheme's specific weights (0.35 for a contradicted current
+status, 0.20 for prior contradictions, and so on) are optimal — only that using lineage at
+all beats using none. The population is synthetic by necessity (there is no real deployment
+to sample from), and the comparison's own limitations are printed in its report rather than
+asserted separately here.
 
 **Single laboratory, single claim shape.** The claim compiler handles subject-predicate-object
 claims about feature influence. Explanations about interactions between features, about
@@ -65,11 +75,37 @@ access can alter rows. `verify_integrity()` will report it; nothing prevents it.
 
 ## Engineering
 
-**The cloud adapters have never run against Google Cloud.** `FirestoreRuntimeStore`,
-`PubSubEventBus`, and `GeminiClient` are written and typed, and the Firestore store is
-covered by the same contract suite as the local one - but against a client *double*. That
-tests the adapter's logic, not network behaviour, consistency, permissions, or SDK version
-drift. No cloud proof should be claimed until it has actually been deployed.
+**The cloud adapters have never run against a deployed Google Cloud project — but they have
+now run against the real services.** This line used to say the Firestore and Pub/Sub
+adapters were covered only by hand-written doubles. That was true, and it was the reason a
+real defect (F9, below) survived 675 passing tests: the double raised whatever exception the
+adapter's code happened to expect, so a mismatch between the two could never surface.
+
+`tests/integration/test_firestore_emulator.py` and `tests/integration/test_pubsub_emulator.py`
+now run `FirestoreRuntimeStore` and `PubSubEventBus` against
+`gcr.io/google.com/cloudsdktool/cloud-sdk:emulators` — the real `google-cloud-firestore` and
+`google-cloud-pubsub` wire protocols, not a double. This covers the class of bug a double
+structurally cannot catch: does the adapter's code guess the real client library's behaviour
+correctly? Every method on `PubSubEventBus` that carried a `# pragma: no cover - needs GCP`
+comment — `publish`, the streaming-pull callback, ack, nack, `publish_duplicate` — has now
+executed against a real broker, including the exact scenario F9 was found in: two
+`FirestoreRuntimeStore` instances racing `claim()` on an identical idempotency key.
+
+**What this still does not establish**, because an emulator is not a deployed project: IAM
+and permission boundaries, multi-region consistency, quota and rate-limit behaviour, network
+partition handling, and cost. Both test files are skipped unless `FIRESTORE_EMULATOR_HOST` /
+`PUBSUB_EMULATOR_HOST` are set, so the default suite — the one that must pass with no Google
+account — is unaffected; run them explicitly to reproduce (commands are in each file's
+docstring). No claim of full cloud proof is made here; the claim is narrower and now true:
+*the adapters have been checked against the real client libraries, not just against a
+double built by the same person who wrote the adapter.*
+
+**Gemini remains genuinely unverified.** There is no equivalent emulator for the Gemini API.
+`GeminiClient` was instead checked against the live `google-genai` SDK documentation and
+exception model (see F9), and `tests/unit/test_gemini_response_handling.py` exercises its
+`finish_reason` / `prompt_feedback` handling against doubles shaped like real SDK response
+objects. Neither of those is a live model call. That gap is real and stays open until someone
+runs it with `LLM_PROVIDER=gemini` and a Google API key.
 
 **Not integrated:** Vertex AI Agent Engine / ADK orchestration, Model Armor, Agent Gateway,
 Memory Bank. The threat model documents in-repo equivalents and says plainly that no
@@ -96,6 +132,10 @@ Stated so the claims here are falsifiable:
   expert judgement on explanations people actually wrote, the protocol would need rethinking.
 - **A domain where neutralization is ill-defined.** Would force the intervention vocabulary
   to become domain-specific rather than universal.
-- **Evidence that lineage-based prioritization does not reduce audit cost.** The claim that
-  memory makes auditing targeted rather than exhaustive is stated in the README and is
-  currently unmeasured — it needs a cost model and a comparison against round-robin.
+- ~~Evidence that lineage-based prioritization does not reduce audit cost.~~ **Measured.**
+  `benchmark/audit_priority_comparison.py` found a mean 75.8% reduction in audits needed
+  versus round-robin, across 20 seeded populations — see the "Operational" section above.
+  What would still change this: a real audit-cost model with per-claim business impact,
+  which the current comparison has no notion of, or evidence that the synthetic outcome
+  mix (65% supported / 20% contradicted / 15% inconclusive) doesn't resemble anything a real
+  deployment would produce.

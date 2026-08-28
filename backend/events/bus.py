@@ -310,7 +310,7 @@ class PubSubEventBus:
         }
 
     async def publish(self, event: AriadneEvent) -> None:  # pragma: no cover - needs GCP
-        from google.cloud import pubsub_v1  # type: ignore[import-not-found]
+        from google.cloud import pubsub_v1  # type: ignore[import-not-found,attr-defined]
 
         publisher = pubsub_v1.PublisherClient()
         path = publisher.topic_path(self.project_id, self.topic)
@@ -335,7 +335,7 @@ class PubSubEventBus:
         Acking before the work is done would convert an at-least-once system into an
         at-most-once one, and a crashed worker would silently lose the audit.
         """
-        from google.cloud import pubsub_v1  # type: ignore[import-not-found]
+        from google.cloud import pubsub_v1  # type: ignore[import-not-found,attr-defined]
 
         from backend.events.schemas import parse_event
 
