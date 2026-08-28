@@ -10,6 +10,12 @@ __pycache__/
 *.db
 var/
 node_modules/
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+*.auto.tfvars
+tfplan*
 dist/
 build/
 .coverage

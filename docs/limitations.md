@@ -124,6 +124,39 @@ demonstration system.
 dead-lettering, but a process restart loses queued events. The Pub/Sub adapter does not have
 this property; the local one is for development and the demo.
 
+**Scale-to-zero and the always-listening worker are in real tension, found by actually
+deploying.** `AriadneWorker` starts its Pub/Sub streaming-pull subscriber inside the Cloud
+Run service's `lifespan`, in-process with the API. That works while a request is in flight;
+Cloud Run's default behaviour freezes CPU once a response is sent and, with
+`min_instance_count = 0`, can tear the whole container down between requests. The very first
+live deployment reproduced this exactly: `POST /api/v1/events/model-version-deployed`
+returned 200 (the publish succeeded), but the message sat in the subscription indefinitely -
+nothing ever appeared in `/api/v1/investigations`, because the instance that was supposed to
+pull it back off Pub/Sub had already been reclaimed. Setting `--no-cpu-throttling
+--min-instances=1` fixed it immediately and reproducibly. That keeps the demo's headline
+claim - "the worker wakes up with no one clicking Analyze" - literally true only when an
+instance is kept warm, which is a real, ongoing cost the "scale to zero" story in
+`docs/deployment.md` does not currently account for. The architecturally correct fix is a
+Pub/Sub **push** subscription that delivers into a dedicated HTTP endpoint (so processing
+happens inside a request Cloud Run is already allocating CPU for, restoring true
+scale-to-zero) rather than a background pull loop; that is a real code change, not done here.
+Terraform's own default (`min_instance_count = 0`) is left as the honest baseline: a
+deployment that needs to actually process events reliably must set `--min-instances=1` and
+`--no-cpu-throttling`, and pay for it.
+
+**A partial run left append-only-detectable debris, on purpose.** The first (broken, no
+subscriber-permission) deployment attempt let one investigation start and fail partway
+through. A later, correctly-processed redelivery of a similarly-shaped event collided with
+that partial state and was correctly rejected by the append-only guard
+(`AppendOnlyViolation: claims.CLM-... already exists with different content`) rather than
+silently overwriting it. That is the guard doing its job, not a defect - but it is worth
+naming as a real, observed failure mode: a worker that dies mid-investigation after writing
+some but not all of its records can leave a claim family in a state where a *legitimately
+different* later attempt at the same content-addressed ID is refused. Recovering from that
+currently means creating a new claim family or accepting the FAILED state; there is no
+automated "abandon this dead partial investigation and let a fresh attempt reuse its
+address" path yet.
+
 ## What would change my confidence
 
 Stated so the claims here are falsifiable:

@@ -90,6 +90,23 @@ Each of these is observable, not asserted:
 **Do not claim a service is running unless it is.** `/api/v1/system` reports the real
 configuration, and the console's honesty bar shows it — if it says `local`, say local.
 
+**Every row above has been captured for real**, against `ariadne-12` on 2026-08-28:
+`/health` and `/api/v1/system` served correctly; `MODEL_VERSION_DEPLOYED` events published
+through a real topic were picked up by the real worker with no request in flight from the
+caller; `/api/v1/runtime` showed `bus.published: 4`, `worker.investigations_started: 3`,
+`duplicates_suppressed: 1` after an explicit duplicate-publish request, `checkpoints.runs:
+144`, and a full evidence ledger with matching claim/verdict/lineage counts; an investigation
+against v4.0.0 reached `CONTRADICTED` with the correct reason codes
+(`CONTROL_DOMINATES`, `PRIMACY_REFUTED`); the Governor scheduled a real re-audit
+(`reason_code: CURRENT_CONTRADICTION`) and opened a real approval request. The one row not
+captured is Vertex AI - this run used `LLM_PROVIDER=stub` deliberately, for a clean,
+zero-Gemini-cost proof pass. See `docs/limitations.md` for what that deployment also
+surfaced: the worker needs `--min-instances=1 --no-cpu-throttling` to reliably process events
+without a request in flight (three real infrastructure bugs were found and fixed getting a
+single event to process correctly - a missing `google_sql_user`, a Cloud Build substitution
+that only resolves inside step args, and a missing `roles/pubsub.subscriber` grant on the
+identity the worker runs as).
+
 ## Observability
 
 Every log line is one JSON object carrying `trace_id`, `event_id`, `idempotency_key`,
@@ -110,7 +127,15 @@ This is a hackathon budget, and the design assumes it:
   retries at 3 and then quarantines rather than spinning.
 - **The target model is arithmetic.** Experiment execution costs nothing — 72 model calls per
   investigation, all local float operations.
-- **Scale to zero.** Cloud Run min instances 0, max 2.
+- **Scale to zero for the API path; the always-listening worker is a real, separate cost.**
+  Cloud Run's own default is min instances 0, max 2, and that is exactly right for request
+  handling. But `AriadneWorker`'s Pub/Sub subscriber runs in-process in the same service's
+  `lifespan`, and Cloud Run freezes CPU between requests - a real deployment found that a
+  published event simply never got processed until the service was given
+  `--min-instances=1 --no-cpu-throttling`. Keeping one small always-on instance is cheap
+  (a fraction of `db-f1-micro`'s own cost) but it is not zero, and the docs should not imply
+  it is. See `docs/limitations.md` for the architecturally correct fix (a Pub/Sub push
+  subscription instead of a background pull loop), not implemented here.
 - **Smallest SQL tier** (`db-f1-micro`); the evidence ledger is tiny.
 - **`--fail-on-regression` for CI**, not a large benchmark sweep.
 - **Budget alert** at a fixed threshold, and disable services after capturing proof.

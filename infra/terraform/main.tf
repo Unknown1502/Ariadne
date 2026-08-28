@@ -19,12 +19,23 @@ terraform {
       source  = "hashicorp/google"
       version = "~> 6.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.6"
+    }
   }
 }
 
 provider "google" {
   project = var.project_id
   region  = var.region
+
+  # Application Default Credentials carry whatever quota project was last set globally on
+  # this machine, which is not necessarily this deployment's project. Without this, an API
+  # that checks quota against the caller's ADC default (billingbudgets did) fails with a
+  # confusing 403 even though the caller has full access to var.project_id.
+  billing_project       = var.project_id
+  user_project_override = true
 }
 
 locals {
@@ -39,6 +50,8 @@ locals {
     "cloudbuild.googleapis.com",
     "logging.googleapis.com",
     "cloudtrace.googleapis.com",
+    "cloudresourcemanager.googleapis.com",
+    "billingbudgets.googleapis.com",
   ]
 
   agent_roles = {
@@ -91,6 +104,50 @@ resource "google_project_iam_member" "publisher" {
   project = var.project_id
   role    = "roles/pubsub.publisher"
   member  = "serviceAccount:${google_service_account.agent["governor"].email}"
+}
+
+# The Cloud Run service runs as this same identity (see service_account on
+# google_cloud_run_v2_service.api below) and is the one whose lifespan starts the
+# streaming-pull subscriber. Publish-only access let it queue MODEL_VERSION_DEPLOYED events
+# successfully - the POST endpoint returned 200 every time - while the subscriber silently
+# had no permission to pull them back. Nothing crashed, nothing logged an error the request
+# path could see, and the messages sat in the subscription indefinitely: the headline demo
+# claim, "the worker wakes up with no one clicking Analyze," was demonstrably false in the
+# actual deployment while every part of it that a health check or an HTTP 200 could see
+# looked correct. Found only by triggering a real event against the real deployment and
+# checking whether an investigation actually appeared.
+resource "google_project_iam_member" "subscriber" {
+  project = var.project_id
+  role    = "roles/pubsub.subscriber"
+  member  = "serviceAccount:${google_service_account.agent["governor"].email}"
+}
+
+# Cloud Build's default service account holds only roles/cloudbuild.builds.builder out of
+# the box - the modern, deliberately narrower default. That role does not include pushing
+# to Artifact Registry or deploying Cloud Run, which infra/cloudbuild/cloudbuild.yaml's own
+# push and deploy-api steps both need. Without these, `gcloud builds submit` gets through
+# the build step and fails on push with a permission error - invisible until a real build
+# is actually submitted, which is exactly how this gap was found.
+data "google_project" "current" {}
+
+resource "google_project_iam_member" "cloudbuild_artifact_writer" {
+  project = var.project_id
+  role    = "roles/artifactregistry.writer"
+  member  = "serviceAccount:${data.google_project.current.number}@cloudbuild.gserviceaccount.com"
+}
+
+resource "google_project_iam_member" "cloudbuild_run_admin" {
+  project = var.project_id
+  role    = "roles/run.admin"
+  member  = "serviceAccount:${data.google_project.current.number}@cloudbuild.gserviceaccount.com"
+}
+
+# `gcloud run deploy` also needs to act as the service account the Cloud Run revision will
+# run as (the governor identity, per google_cloud_run_v2_service.api below).
+resource "google_service_account_iam_member" "cloudbuild_act_as_governor" {
+  service_account_id = google_service_account.agent["governor"].name
+  role                = "roles/iam.serviceAccountUser"
+  member              = "serviceAccount:${data.google_project.current.number}@cloudbuild.gserviceaccount.com"
 }
 
 # --- events ---------------------------------------------------------------------------
@@ -151,6 +208,41 @@ resource "google_sql_database_instance" "evidence" {
 resource "google_sql_database" "ariadne" {
   name     = "ariadne"
   instance = google_sql_database_instance.evidence.name
+}
+
+# The Cloud Run env var below references user "ariadne" with no password. Without these two
+# resources that user does not exist, and the deployed API would fail every database call -
+# a gap invisible until an actual deployment tried to connect, which is exactly the class of
+# defect this project's own hostile-review discipline exists to catch before it ships.
+resource "random_password" "sql_ariadne" {
+  length  = 32
+  special = false # simplest safe value to carry through a URL query string unescaped
+}
+
+resource "google_sql_user" "ariadne" {
+  name     = "ariadne"
+  instance = google_sql_database_instance.evidence.name
+  password = random_password.sql_ariadne.result
+}
+
+resource "google_secret_manager_secret" "database_url" {
+  secret_id = "ariadne-database-url"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.enabled]
+}
+
+resource "google_secret_manager_secret_version" "database_url" {
+  secret = google_secret_manager_secret.database_url.id
+  secret_data = "postgresql+psycopg://ariadne:${random_password.sql_ariadne.result}@/ariadne?host=/cloudsql/${google_sql_database_instance.evidence.connection_name}"
+}
+
+# Only the identity that runs the Cloud Run service needs to read this.
+resource "google_secret_manager_secret_iam_member" "database_url_access" {
+  secret_id = google_secret_manager_secret.database_url.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.agent["governor"].email}"
 }
 
 resource "google_firestore_database" "runtime" {
@@ -232,8 +324,13 @@ resource "google_cloud_run_v2_service" "api" {
         value = "true"
       }
       env {
-        name  = "DATABASE_URL"
-        value = "postgresql+psycopg://ariadne@/ariadne?host=/cloudsql/${google_sql_database_instance.evidence.connection_name}"
+        name = "DATABASE_URL"
+        value_source {
+          secret_key_ref {
+            secret  = google_secret_manager_secret.database_url.secret_id
+            version = "latest"
+          }
+        }
       }
     }
 
@@ -245,7 +342,29 @@ resource "google_cloud_run_v2_service" "api" {
     }
   }
 
-  depends_on = [google_project_service.enabled]
+  depends_on = [
+    google_project_service.enabled,
+    google_secret_manager_secret_version.database_url,
+    google_secret_manager_secret_iam_member.database_url_access,
+  ]
+}
+
+# `gcloud run deploy --allow-unauthenticated`, run from inside infra/cloudbuild/cloudbuild.yaml
+# under the Cloud Build service account, silently did not add this binding - no error, no
+# warning, just an IAM policy with zero bindings on the deployed service and every request
+# answered with a 403 from Google's front end rather than the app. The identical command
+# with an owner identity applied instantly, which places the gap specifically at
+# `run.services.setIamPolicy` under the Cloud Build service account rather than at an org
+# policy or anything about the service itself. Declaring the binding here removes the
+# CLI flag's silent-failure mode entirely: Terraform either sets this policy or reports why
+# it could not, and a `terraform plan` shows a missing binding as a pending change instead
+# of a page that looks identical whether the service is public or not.
+resource "google_cloud_run_v2_service_iam_member" "public_invoker" {
+  project  = var.project_id
+  location = var.region
+  name     = google_cloud_run_v2_service.api.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }
 
 resource "google_billing_budget" "guardrail" {

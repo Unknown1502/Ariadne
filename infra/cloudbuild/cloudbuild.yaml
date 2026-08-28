@@ -2,6 +2,24 @@
 #
 # The test step runs before the image is pushed. The suite is hermetic - no network, no
 # cloud account, no API key - so a broken build is caught here rather than in a demo.
+#
+# The image path is composed directly in each step from the built-in ${PROJECT_ID} and
+# ${BUILD_ID} substitutions, not through a user-defined `_IMAGE` default. Cloud Build does
+# not expand built-in substitutions inside another substitution's *default value* - only
+# inside step args, the `images:` list, and `artifacts:`. An earlier version of this file
+# defined `_IMAGE: ...${PROJECT_ID}...` as a substitution default, which is never resolved;
+# every submission failed at validation with "invalid image name" before a single step ran.
+#
+# BUILD_ID rather than SHORT_SHA for the version tag: SHORT_SHA/COMMIT_SHA are only
+# populated for builds triggered from a connected source repository (a GitHub trigger,
+# Cloud Source Repos). A plain `gcloud builds submit .` from a local directory - exactly
+# how this pipeline is actually invoked - leaves them empty, which produces an equally
+# invalid image reference ("...api:" with nothing after the colon). BUILD_ID is always
+# populated regardless of how the build was started, so the same file works unmodified
+# from a local machine and from a future CI trigger.
+#
+# Both of these were found by actually running the pipeline end to end against a live
+# project, not by reading the YAML - it validated and looked correct either way.
 
 steps:
   - id: test
@@ -16,12 +34,18 @@ steps:
 
   - id: build
     name: gcr.io/cloud-builders/docker
-    args: ["build", "-t", "${_IMAGE}:${SHORT_SHA}", "-t", "${_IMAGE}:latest", "."]
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/ariadne/api:${BUILD_ID}
+      - -t
+      - ${_REGION}-docker.pkg.dev/${PROJECT_ID}/ariadne/api:latest
+      - .
     waitFor: ["test"]
 
   - id: push
     name: gcr.io/cloud-builders/docker
-    args: ["push", "--all-tags", "${_IMAGE}"]
+    args: ["push", "--all-tags", "${_REGION}-docker.pkg.dev/${PROJECT_ID}/ariadne/api"]
     waitFor: ["build"]
 
   - id: deploy-api
@@ -31,26 +55,30 @@ steps:
       - run
       - deploy
       - ariadne-api
-      - --image=${_IMAGE}:${SHORT_SHA}
+      - --image=${_REGION}-docker.pkg.dev/${PROJECT_ID}/ariadne/api:${BUILD_ID}
       - --region=${_REGION}
       - --platform=managed
       - --min-instances=0
       - --max-instances=2
-      - --allow-unauthenticated
     waitFor: ["push"]
+    # Deliberately no --allow-unauthenticated: under Cloud Build's service account this flag
+    # was accepted with no error and silently did nothing (missing run.services.setIamPolicy
+    # on that identity specifically - a plain gcloud run deploy with an owner identity set the
+    # same binding instantly). Public invocation is now a real, plan-visible Terraform
+    # resource (google_cloud_run_v2_service_iam_member.public_invoker) instead of a CLI flag
+    # whose failure mode is indistinguishable from success.
 
 artifacts:
   objects:
-    location: gs://${PROJECT_ID}-ariadne-artifacts/benchmark/${SHORT_SHA}
+    location: gs://${PROJECT_ID}-ariadne-artifacts/benchmark/${BUILD_ID}
     paths: ["/workspace/benchmark/*"]
 
 images:
-  - "${_IMAGE}:${SHORT_SHA}"
-  - "${_IMAGE}:latest"
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/ariadne/api:${BUILD_ID}"
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/ariadne/api:latest"
 
 substitutions:
   _REGION: asia-south1
-  _IMAGE: asia-south1-docker.pkg.dev/${PROJECT_ID}/ariadne/api
 
 options:
   logging: CLOUD_LOGGING_ONLY
