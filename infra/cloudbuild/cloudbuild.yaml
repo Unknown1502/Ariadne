@@ -1,0 +1,59 @@
+# Build, test, and deploy.
+#
+# The test step runs before the image is pushed. The suite is hermetic - no network, no
+# cloud account, no API key - so a broken build is caught here rather than in a demo.
+
+steps:
+  - id: test
+    name: python:3.12-slim
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        pip install --quiet -e ".[dev]"
+        pytest -q
+        python -m benchmark.run_benchmark --out /workspace/benchmark --fail-on-regression
+
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args: ["build", "-t", "${_IMAGE}:${SHORT_SHA}", "-t", "${_IMAGE}:latest", "."]
+    waitFor: ["test"]
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: ["push", "--all-tags", "${_IMAGE}"]
+    waitFor: ["build"]
+
+  - id: deploy-api
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ariadne-api
+      - --image=${_IMAGE}:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --min-instances=0
+      - --max-instances=2
+      - --allow-unauthenticated
+    waitFor: ["push"]
+
+artifacts:
+  objects:
+    location: gs://${PROJECT_ID}-ariadne-artifacts/benchmark/${SHORT_SHA}
+    paths: ["/workspace/benchmark/*"]
+
+images:
+  - "${_IMAGE}:${SHORT_SHA}"
+  - "${_IMAGE}:latest"
+
+substitutions:
+  _REGION: asia-south1
+  _IMAGE: asia-south1-docker.pkg.dev/${PROJECT_ID}/ariadne/api
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+timeout: 1800s
