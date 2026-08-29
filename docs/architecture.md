@@ -234,6 +234,31 @@ public surface contains none.
 
 ---
 
+## The target-model seam
+
+```mermaid
+flowchart LR
+    ENG["Experiment engine"] --> PROTO{{"TargetModel protocol<br/>predict(features) → RawPrediction"}}
+    PROTO --> SYN["SyntheticTriageModel<br/>four published formulas,<br/>ground truth checkable by hand"]
+    PROTO --> REM["RemoteTargetModel<br/>wrapped in budget / cache / replication"]
+    REM --> GEM["Gemini 2.5 Flash<br/>via Vertex AI — 68 live calls"]
+    REM --> ANY["any model you supply<br/>FeatureCodec + Transport"]
+```
+
+**What to notice.** The engine has one way to reach a model, and it cannot tell which side of
+this diagram it is talking to.
+`tests/unit/test_adapters.py::TestTransparentToTheProtocol` asserts that directly: it runs the
+synthetic v1.0.0 model through the *entire* remote stack — codec, transport, retry, budget,
+replication — and requires the identical `CONTRADICTED` verdict with the identical reason
+codes. That is what makes "the adapter changes how the model is reached, not what is
+measured" a checked claim rather than a design intention.
+
+The synthetic branch exists so the verifier's own accuracy is measurable; the remote branch
+exists so that accuracy means something outside the laboratory. Neither is a mock of the
+other. See `docs/integrating-a-real-model.md` for the layer ordering, which is load-bearing.
+
+---
+
 ## What is deliberately not here
 
 - **No message queue between agents.** Agents are called in-process by the pipeline. Putting

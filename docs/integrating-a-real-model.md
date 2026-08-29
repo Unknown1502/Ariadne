@@ -159,9 +159,37 @@ model = build_remote_model(
 )
 ```
 
+```mermaid
+flowchart TB
+    ENG["ExperimentRunner<br/>calls TargetModel.predict — cannot tell local from remote"]
+    ENG --> BUD
+
+    subgraph Stack["build_remote_model — the order is load-bearing"]
+        direction TB
+        BUD["BudgetedTargetModel<br/>counts every real call, replicates included<br/>raises BudgetExhausted; fails closed"]
+        CACHE["CachingTargetModel<br/>refuses to wrap a model declared non-deterministic"]
+        REP["ReplicatedTargetModel<br/>averages n samples to clear the noise floor"]
+        BUD --> CACHE --> REP
+    end
+
+    REP --> RM["RemoteTargetModel<br/>feature-space contract, bounded retry, VersionScope"]
+    RM --> CODEC["FeatureCodec — yours<br/>encode / decode, score must be continuous"]
+    CODEC --> TR["Transport — yours<br/>the call itself, kept thin"]
+    TR --> NET(("the model you<br/>did not write"))
+```
+
 Budget outermost (so it counts every real call, including replicates), cache inside it (so
 hits cost nothing and are not billed), replication innermost (so it is what actually talks to
 the network).
+
+**Each of those orderings is a bug if reversed.** Budget inside replication would count one
+call where five were billed. Cache outside budget would let a cached hit consume budget it
+never spent. And caching *below* replication would return the same stored answer n times —
+turning a measurement of the model's self-disagreement into a measurement of the cache. That
+last one is why `CachingTargetModel` refuses a model whose identity declares
+`deterministic=False` rather than trusting the caller to compose correctly: a cache over a
+stochastic model reports perfect stability for a model that has none, which is a silent false
+negative on the gate protecting verdict integrity.
 
 Then hand it to the engine exactly like the synthetic one:
 

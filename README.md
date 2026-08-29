@@ -75,7 +75,12 @@ against the deployment: `duplicates_suppressed: 6`, `investigations_started: 0`.
 delivery is what Pub/Sub provides; exactly-once *work* is what Ariadne adds on top, and this
 is that claim being kept rather than described.
 
-Both services scale to zero, so the first request after an idle period takes a few seconds.
+The console scales to zero, so the first request after an idle period takes a few seconds.
+The API is held at one warm instance on purpose: the worker's Pub/Sub subscriber runs
+in-process, and Cloud Run freezes CPU between requests — so at zero instances a published
+event is never pulled. That is a real, ongoing cost and a genuine architectural wart, not a
+tuning preference. [docs/limitations.md](docs/limitations.md) has the fix that would remove
+it (a push subscription) and the reason it is not implemented here.
 
 ---
 
@@ -107,7 +112,7 @@ No Google Cloud account. No API key. No network.
 ```bash
 python -m venv .venv && .venv/Scripts/activate    # or source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                            # 881 tests, hermetic (24 need Docker, skip cleanly)
+pytest                                            # 939 tests, hermetic (24 need Docker, skip cleanly)
 python -m backend.scripts.run_demo                # the whole story, end to end
 python -m benchmark.run_benchmark                 # scored against deterministic ground truth
 ```

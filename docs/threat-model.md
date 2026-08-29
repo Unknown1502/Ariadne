@@ -12,6 +12,33 @@ Everything here follows from taking that seriously.
 
 Three layers stand between that string and a verdict. Only the third is load-bearing.
 
+```mermaid
+flowchart TD
+    ATK["Attacker-controlled explanation text"]
+    ATK --> L1{"Layer 1 — detection<br/>7 pattern families<br/>NFKC normalised, controls stripped"}
+    L1 -->|matched| Q["QUARANTINED<br/>recorded, never executed"]
+    L1 -->|"missed (assume it does)"| L2["Layer 2 — framing<br/>delimited data block,<br/>closing tag stripped from content"]
+    L2 -->|"ignored (assume it is)"| INV["Investigator — assume FULLY COMPROMISED"]
+
+    INV -.->|"attempts to write a verdict"| DENY["refused: manifest grants<br/>write_scopes = [claim]"]
+    INV -.->|"attempts to call a tool"| DENY2["refused and recorded:<br/>routing needs capability + schema"]
+    INV --> CLAIM["a Claim — the only artifact it can write"]
+
+    CLAIM --> ENG["Experiment engine<br/>neutral values are lab constants,<br/>preserved features are computed"]
+    ENG --> EV["Evidence<br/>measurements and hashes;<br/>no verdict field exists on the schema"]
+    EV --> VER["Verifier — deterministic<br/>a test greps its source for genai / gemini / llm_client"]
+    VER --> OUT(["Verdict computed from numbers.<br/>The text never reached it."])
+```
+
+**What to notice.** Follow the worst case: layers 1 and 2 both fail and the Investigator does
+exactly what the attacker asked. The dotted edges are where it stops — not because something
+detected the attack, but because the capability was never granted. The best available outcome
+for the attacker is a well-formed experiment against a silly claim, which the verifier then
+rates untestable or unsupported.
+
+This is why the third layer is the only one described as load-bearing. The first two reduce
+noise; the third is the one that would still hold if the first two did not exist.
+
 **Layer 1 — detection.** Seven pattern families are matched: instruction override, role
 hijack, verdict injection, tool injection, policy tampering, prompt delimiters, and
 exfiltration. Input is NFKC-normalized first and control characters stripped, because

@@ -58,6 +58,26 @@ Three arms over the same fixture cases, in the same order:
 - **intervention** — the claimed driver set to its neutral value
 - **control** — a different feature neutralized instead
 
+```mermaid
+flowchart LR
+    FIX[("Fixture cases<br/>declared distribution, fixed seed")]
+    FIX --> B["baseline<br/>case untouched"]
+    FIX --> I["intervention<br/>claimed driver → neutral"]
+    FIX --> K["control<br/>a feature the explanation<br/>never mentioned → neutral"]
+    B --> D1["effect<br/>= intervention − baseline"]
+    I --> D1
+    B --> D2["control effect<br/>= control − baseline"]
+    K --> D2
+    D1 --> V{{"the verdict compares<br/>these two"}}
+    D2 --> V
+```
+
+**What to notice.** The control arm is why "the score moved" is not enough. If neutralizing a
+feature the explanation never named moves the score *further* than neutralizing the one it
+did, the explanation named the wrong driver — and the measurement that proves it is the
+second delta. The ablation in `docs/evaluation.md` removes this arm and watches the false
+support rate rise from 0% to 8%.
+
 Pairing matters. Both arms run the same cases, so between-case variance cancels and the
 remaining signal is attributable to the intervention rather than to which cases landed
 where.
@@ -85,6 +105,44 @@ statistics already handle — zeroing the whole probe for it would report a stro
 as worthless.
 
 ## 5. The verdict
+
+```mermaid
+flowchart TD
+    START([Evidence + Claim + Plan]) --> G1
+
+    subgraph Gates["Four gates — evaluated before the data is looked at"]
+        direction TB
+        G1{"intervention validity<br/>≥ threshold?"}
+        G2{"claim testability<br/>≥ 0.30?"}
+        G3{"runs ≥ minimum?"}
+        G4{"model instability<br/>≤ threshold?"}
+        G1 -->|no| I1["INCONCLUSIVE<br/>INVALID_INTERVENTION"]
+        G1 -->|yes| G2
+        G2 -->|no| I2["INCONCLUSIVE<br/>CLAIM_NOT_TESTABLE"]
+        G2 -->|yes| G3
+        G3 -->|no| I3["INCONCLUSIVE<br/>INSUFFICIENT_EVIDENCE"]
+        G3 -->|yes| G4
+        G4 -->|no| I4["INCONCLUSIVE<br/>UNSTABLE_TARGET"]
+    end
+
+    G4 -->|yes| DATA{"is the effect<br/>reproducible?"}
+    DATA -->|"mixed — neither direction reproducible"| I5["INCONCLUSIVE"]
+    DATA -->|"reproducibly absent"| CON1["CONTRADICTED"]
+    DATA -->|"reproducibly present"| PRIM{"primacy claimed, and control<br/>beats the effect by ≥ half<br/>the effect threshold?"}
+    PRIM -->|yes| CON2["CONTRADICTED<br/>PRIMACY_REFUTED"]
+    PRIM -->|no| SUP["SUPPORTED"]
+```
+
+**What to notice.** Everything inside the box happens *before* a single measurement is
+interpreted, and every exit from it is INCONCLUSIVE. That is the shape of the central claim:
+a system that cannot reach a verdict says so, and the only path to CONTRADICTED or SUPPORTED
+runs through four gates that each have their own way of saying "this experiment could not
+answer the question."
+
+Note also that CONTRADICTED has two distinct entrances. An effect can be reproducibly
+*absent*, or reproducibly present but smaller than a control the explanation never mentioned
+— and the second only refutes a claim that asserted **primacy**. Same measurements, different
+claim, different verdict.
 
 Rules are evaluated in this order, and the order is the design:
 

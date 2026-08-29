@@ -18,6 +18,45 @@ dead-lettering, real atomic idempotency claims, and real durable checkpoints. Th
 the reliability properties are exercised by the test suite on every run, not only when
 someone has a cloud project.
 
+## What is currently deployed
+
+| | |
+|---|---|
+| Console | https://ariadne-console-uhcrowxnsq-el.a.run.app |
+| API | https://ariadne-api-uhcrowxnsq-el.a.run.app |
+| Project / region | `ariadne-12` / `asia-south1` |
+
+```mermaid
+flowchart TB
+    USER([Reviewer]) --> CONSOLE["Cloud Run: ariadne-console<br/>nginx + static React"]
+    CONSOLE -->|"/api proxy — Host header set to the<br/>API host; using the request Host looped"| API
+
+    subgraph Service["Cloud Run: ariadne-api — one container, two roles"]
+        API["FastAPI<br/>publishes events, serves reads"]
+        WORKER["AriadneWorker<br/>Pub/Sub streaming pull, started in lifespan"]
+    end
+
+    API -->|publish| TOPIC[["Pub/Sub<br/>ariadne.events"]]
+    TOPIC --> SUB[/"subscription"/]
+    SUB --> WORKER
+    TOPIC -.->|"after max attempts"| DLQ[["ariadne.dead-letter"]]
+
+    WORKER --> FS[("Firestore<br/>checkpoints, idempotency,<br/>schedules, approvals")]
+    WORKER --> SQL[("Cloud SQL — PostgreSQL<br/>claims, evidence, verdicts,<br/>lineage, debt, decisions")]
+    API --> FS
+    API --> SQL
+    WORKER -.->|"logs as JSON on stdout"| LOG["Cloud Logging<br/>parsed into structured fields"]
+```
+
+**What to notice.** The API and the worker are the *same container* — the same image, a
+different entry path. That is deliberate: a worker built separately could drift from the code
+that produced the evidence the API serves.
+
+It is also the source of the deployment's one real architectural wart. Because the
+subscriber runs in-process inside the service's `lifespan`, Cloud Run's default behaviour of
+freezing CPU between requests stops it pulling. See **Cost control** below and
+`docs/limitations.md` for the fix that is not implemented here.
+
 ## Switching on the cloud
 
 ```bash
@@ -98,9 +137,15 @@ caller; `/api/v1/runtime` showed `bus.published: 4`, `worker.investigations_star
 144`, and a full evidence ledger with matching claim/verdict/lineage counts; an investigation
 against v4.0.0 reached `CONTRADICTED` with the correct reason codes
 (`CONTROL_DOMINATES`, `PRIMACY_REFUTED`); the Governor scheduled a real re-audit
-(`reason_code: CURRENT_CONTRADICTION`) and opened a real approval request. The one row not
-captured is Vertex AI - this run used `LLM_PROVIDER=stub` deliberately, for a clean,
-zero-Gemini-cost proof pass. See `docs/limitations.md` for what that deployment also
+(`reason_code: CURRENT_CONTRADICTION`) and opened a real approval request.
+
+**The Vertex AI row needs splitting, because the two Gemini surfaces have different
+answers.** Gemini as the *target being audited* has run for real: 68 live Vertex AI calls,
+recorded in `docs/real-model-audit.md`. Gemini as the *Investigator* has not — this proof
+pass used `LLM_PROVIDER=stub` deliberately, for a clean zero-cost run, and the deployment
+still reports `reasoner.provider = "stub"` on `/api/v1/system` today. Anyone can check that
+in a browser, which is the point of the endpoint. See `docs/limitations.md` for what that
+deployment also
 surfaced: the worker needs `--min-instances=1 --no-cpu-throttling` to reliably process events
 without a request in flight (three real infrastructure bugs were found and fixed getting a
 single event to process correctly - a missing `google_sql_user`, a Cloud Build substitution

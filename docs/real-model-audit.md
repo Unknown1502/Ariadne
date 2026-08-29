@@ -24,6 +24,30 @@ answer before the run. The model was asked to score a case **and** to state whic
 the score, and Ariadne then tested that stated explanation with a controlled intervention.
 That is the full loop the product claims to perform, executed against a genuine black box.
 
+```mermaid
+flowchart TD
+    START(["Gemini 2.5 Flash via Vertex AI<br/>opaque weighting, answer not known in advance"])
+    START --> NF["Step 1 — measure_noise_floor<br/>identical inputs, repeated"]
+    NF --> DET{"agrees with itself?"}
+    DET -->|"No — spread up to 0.165 at temperature 0"| REP["replicates_needed(sd=0.0255, 0.10) = 2<br/>instability gate 0.247, measured not guessed"]
+    DET -.->|"had it been yes"| CACHE["1 call per case,<br/>caching would become safe"]
+
+    REP --> ASK["Step 2 — ask the model to score a case<br/>AND to name what drove the score"]
+    ASK --> CLAIM["'The high urgency_marker signal drove this score.'"]
+    CLAIM --> PROBE["neutralize urgency_marker → 0.5"]
+    CLAIM --> CTRL["control: neutralize signal_c → 0.5<br/>a signal the explanation never mentioned"]
+    PROBE --> CMP{{"effect −0.194<br/>vs control +0.002"}}
+    CTRL --> CMP
+    CMP --> V(["SUPPORTED<br/>reproducible on 7 of 8 cases"])
+```
+
+**What to notice.** Step 1 is not a formality. Had the noise floor gone unmeasured, a single
+call per case would have been measuring the model's self-disagreement as much as the
+intervention — and the spread (0.165) is *larger* than the effect threshold (0.10) the claim
+is tested against. The dotted branch is the path not taken, and it is why
+`CachingTargetModel` refuses a model declared non-deterministic: caching here would have
+reported perfect stability for a model that has none.
+
 ## Step 1 — measure the model before trusting it
 
 ```

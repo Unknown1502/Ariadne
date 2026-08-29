@@ -94,12 +94,36 @@ INCONCLUSIVE to everything, and this is the number that catches it.
 ## Test suite
 
 ```
-tests/unit/          contracts, state machine, hashing, statistics, target models, agents
-tests/integration/   verifier ground truth, engine, lineage, debt, governor, runtime, API
+tests/unit/          contracts, state machine, hashing, statistics, target models, agents,
+                     remote adapters, the Gemini target codec, structured logging
+tests/integration/   verifier ground truth, engine, lineage, chain integrity, debt,
+                     governor, runtime, API, the demo script's narrative
 tests/chaos/         failure injection: dead models, malformed output, crashes, storage faults
 tests/security/      injection payloads, privilege boundaries, ledger tampering
 tests/benchmark/     the benchmark itself, as a regression gate
 ```
 
-Every test is hermetic: no network, no cloud account, no wall-clock dependency, no unseeded
-randomness. A failure means a regression, not a flake.
+939 tests, 92% line coverage on `backend/`. Every test is hermetic: no network, no cloud
+account, no wall-clock dependency, no unseeded randomness. A failure means a regression, not a
+flake. The 24 skips are the Firestore and Pub/Sub emulator suites, which need Docker and skip
+cleanly without it.
+
+### Four suites that exist because prose is not verification
+
+This project keeps finding the same defect species in itself — something described
+confidently that no test holds to its description. Four suites now automate the check rather
+than relying on anyone remembering to make it:
+
+| Suite | What it refuses to let drift |
+|---|---|
+| `test_config_is_honest.py` | a setting that is accepted, reported, and read by nothing |
+| `test_readme_is_current.py` | a README claim a machine can check — test counts, formulas, ablation figures, every doc link |
+| `test_docs_are_current.py` | every repository path the other docs name, and every mermaid block being well-formed |
+| `test_demo_narrative.py` | the demo script's *output*, which CI previously checked only for exit status |
+
+The last is the newest and found the most: asserting what `run_demo.py` prints surfaced a
+forked hash chain in the append-only ledger. See `docs/architecture-review.md` §F10.
+
+The lesson each of these encodes is the one in `docs/decisions.md`: *a check that has to be
+remembered will be forgotten.* Every one of them was written after the thing it guards had
+already gone wrong at least once.

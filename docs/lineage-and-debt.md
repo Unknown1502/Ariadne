@@ -51,6 +51,48 @@ rather than a stored flag someone has to remember to update.
 3. **Hash chain.** Each entry links to its predecessor's digest. Altering or removing an
    ancestor breaks every descendant, and `verify_integrity()` recomputes it on demand.
 
+The chain is a linked list, and the distinction between that and "the rows in table order"
+turned out to matter more than it sounds:
+
+```mermaid
+flowchart LR
+    O["INITIAL<br/>v1 CONTRADICTED<br/>prev = null"] --> A["DISPUTES<br/>v2 SUPPORTED"]
+    A --> B["DISPUTES<br/>v3 INCONCLUSIVE"]
+    B --> C["DISPUTES<br/>v4 CONTRADICTED"]
+    C --> E1["EXPIRES v1"]
+    E1 --> E2["EXPIRES v2"]
+    E2 --> E3["EXPIRES v3"]
+    E3 --> E4["EXPIRES v4"]
+    E4 -.-> TAIL(["the tail — the one entry<br/>nothing else points at"])
+```
+
+**The bug this replaced.** A distribution shift expires every prior reading in one call, so
+all four `EXPIRES` rows carry the *same* `created_at`. The code found "the previous entry" by
+taking the last row of a query ordered by `(created_at, id)` — and with the timestamps tied,
+the tiebreak fell to `id`, which is a **content hash**. "Last" meant "largest hash", so three
+of the four linked back to the same predecessor:
+
+```mermaid
+flowchart LR
+    C["DISPUTES v4"] --> E1["EXPIRES v1"]
+    C --> E2["EXPIRES v2"]
+    C --> E3["EXPIRES v3"]
+    C --> E4["EXPIRES v4"]
+    style C fill:#fee,stroke:#c00
+```
+
+That failed in both directions at once. `verify_chain` compared links against sort order, so
+it reported an untouched history as **broken** — and an integrity check that cries wolf is one
+people stop reading. Meanwhile the chain really had forked, so an entire branch could be
+dropped and a walk would never miss it.
+
+Both operations are now properties of the links rather than of a sort: the tail is the entry
+nothing points at, and `verify_chain` walks from the origin and reports whatever it cannot
+reach. `tests/integration/test_lineage_chain_integrity.py` collapses the timestamps
+deliberately; eleven of its tests fail against the old code. Every chain test that existed
+before spaced its audits thirty days apart, where the tie cannot happen — which is the whole
+reason nothing caught it.
+
 There is one deliberate exception to strictness: re-appending a row with *identical
 scientific content* is a no-op rather than an error. At-least-once delivery means the same
 verdict can legitimately arrive twice, and a system that raised on that would be unusable.
@@ -120,7 +162,8 @@ and forgets to bump the version.
 
 ### A note on the design doc's example
 
-`docs/04-explanation-debt.md` in the original design pack illustrates a debt breakdown with
+`04-explanation-debt.md` in the original design pack (not in this repository) illustrates a
+debt breakdown with
 `Contradictions: +31` against a 25-point weight cap. Those numbers cannot both be right.
 
 This implementation follows the weight table and reports computed values, so a demo shows

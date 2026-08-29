@@ -39,7 +39,10 @@ pytest tests/security tests/chaos -q
 
 - [x] v1/v2/v3/v4 lineage reconstructs correctly
 - [x] History is append-only — the ledger exposes no update or delete
-- [x] Hash chain detects an altered ancestor
+- [x] Hash chain detects an altered ancestor, a removed row, and a forged link
+- [x] The chain stays linear when a batch of entries shares one timestamp — the case that
+      used to fork it, and the reason `verify_chain` walks links instead of trusting row
+      order — `tests/integration/test_lineage_chain_integrity.py`
 - [x] Point-in-time reconstruction answers "what did we believe on day N?"
 - [x] A distribution change expires evidence without rewriting it
 - [x] Debt is decomposable, bounded, and carries its policy version
@@ -64,7 +67,13 @@ pytest tests/integration/test_lineage.py tests/integration/test_debt_and_governo
 
 ```bash
 rm -rf var/demo && python -m backend.scripts.run_demo
+pytest tests/integration/test_demo_narrative.py -q   # asserts the story, not just exit 0
 ```
+
+The demo script used to be checked only for a zero exit code, which meant every number it
+printed was unasserted — it could have told a different story with a green build. Its
+transcript is now read and checked against the ledger rows the figures claim to come from.
+Doing that is what surfaced the forked hash chain above.
 
 ## Honesty
 
@@ -80,19 +89,42 @@ The items most worth failing on:
 - [x] Limitations are stated in the same detail as capabilities
 - [x] Deviations from the design pack are documented with reasoning — `docs/decisions.md`
 
+## Cloud
+
+- [x] Deployed to a live Google Cloud project — `ariadne-12`, `asia-south1`: Cloud Run,
+      Pub/Sub, Firestore, Cloud SQL. Console and API both serving.
+- [x] The deployment found bugs an emulator could not — a missing `google_sql_user`, a Cloud
+      Build substitution that only resolves inside step args, a missing
+      `roles/pubsub.subscriber` grant, and an nginx proxy loop from forwarding the request
+      `Host` header
+- [x] Idempotency demonstrated against the live deployment — six already-processed events
+      replayed, `duplicates_suppressed: 6`, `investigations_started: 0`
+- [x] A real third-party model audited end to end — Gemini 2.5 Flash via Vertex AI, 68 live
+      calls, `docs/real-model-audit.md`
+
+```bash
+curl https://ariadne-api-uhcrowxnsq-el.a.run.app/api/v1/system
+curl https://ariadne-api-uhcrowxnsq-el.a.run.app/api/v1/runtime
+```
+
 ## Not done
 
 Stated plainly rather than omitted:
 
-- [ ] Deployed to a live Google Cloud project — Terraform and Cloud Build are written and
-      the adapters exist, but nothing has been applied. No cloud proof should be claimed
-      until it has.
-- [ ] Gemini path exercised against the real API — the code is written and typed; the
-      benchmark runs on the offline reasoner, so Gemini's claim-extraction quality is
-      unmeasured.
+- [ ] **Gemini as the Investigator** exercised against the real API. Note this is *not* the
+      same as the Gemini audit above: that ran Gemini as the model being *audited*. The
+      agent-side `GeminiClient` is written, typed, and tested against SDK-shaped doubles, but
+      the benchmark and the live deployment both run the offline reasoner
+      (`/api/v1/system` reports `provider: "stub"`), so Gemini's claim-extraction quality is
+      still unmeasured. `docs/limitations.md` has the table separating the two.
 - [ ] Four-minute video recorded
 - [ ] Technical blog post
-- [ ] Public repository and hosted URL
+- [ ] Public repository
+- [ ] Console visual redesign — drafts exist, none chosen
+- [ ] Frontend test framework — the console has no unit tests at all; its logic is covered
+      by typecheck and by checking behaviour against the live API
+- [ ] Pub/Sub **push** subscription — the worker's in-process pull loop is why the
+      deployment needs `--min-instances=1 --no-cpu-throttling`. See `docs/limitations.md`.
 - [ ] ADK, Model Armor, Agent Gateway, Memory Bank integrations — see `docs/decisions.md` §14
 
 ## Before submitting

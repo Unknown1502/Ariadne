@@ -4,12 +4,12 @@ Prompt 17, run as a hostile pass over the repository rather than a summary of it
 was to look for **claims the code does not honour** — docstrings, docs, and config options
 that promise something no code path delivers.
 
-That framing found nine. Seven were real, and five of those were of the same shape:
+That framing found ten. Eight were real, and five of those were of the same shape:
 *a capability that is described confidently and implemented partially or not at all.* For a
 project whose entire thesis is "explanations should have to prove themselves", that is the
 most damaging class of defect there is.
 
-All seven are fixed. Findings are listed with the evidence that proved them.
+All eight are fixed. Findings are listed with the evidence that proved them.
 
 The pattern recurred three times before it was automated away. F1 was found by reading the
 adapter list; F2 by asking "where else?" straight after; F8 by finally writing the twenty-line
@@ -21,6 +21,11 @@ F9 is a different species: not a missing implementation, but two present ones th
 never checked against the systems they talk to. Verified against live SDK documentation
 rather than memory, because the two adapters this project cannot run locally are exactly
 where "675 tests pass" stops being evidence of correctness.
+
+F10 is a third species, and the one that took longest to think of: an implementation that
+*was* exercised on every CI run and still went unchecked, because what it produced was
+console output and nothing read it. It hid a forked hash chain in the append-only ledger —
+the structure this project points at when it says history cannot be rewritten.
 
 ---
 
@@ -214,6 +219,40 @@ recorded as a method — `docs/limitations.md` states plainly that the doubles c
 failure shape (a truncated `finish_reason`, a real `Conflict`/`AlreadyExists` hierarchy)
 rather than the sanitized shape the original code happened to handle.
 
+### F10 — The hash chain forked whenever two entries shared a timestamp · **CRITICAL** · fixed
+
+Found later than the rest, by a different method: finally asserting `run_demo.py`'s output
+instead of only its exit code. The script was the largest untested module in the repository —
+CI ran it and checked that it returned zero, so every number it printed was unasserted.
+
+`expire_evidence` writes one `EXPIRES` row per affected reading, all stamped with a single
+`moment`, and re-read "the previous entry" as `lineage_for_family(...)[-1]`. That query orders
+by `(created_at, id)`. With `created_at` tied across the batch, the tiebreak fell to `id` — a
+**content-addressed hash**. "Last" therefore meant "largest hash", which is stable and
+completely unrelated to insertion order, so every row after the first linked back to the same
+predecessor. One distribution shift produced four entries claiming one parent, three of them
+unreachable from the origin.
+
+It failed in both directions simultaneously. `verify_chain` compared links against sort order
+and reported an **untouched history as broken** — an integrity check that cries wolf is one
+people stop reading, which is the worst failure mode available to a tamper-detector. And the
+chain genuinely had forked, so an entire branch could be dropped and a walk would never miss
+it: tamper-evidence quietly weakened in the exact structure this project points at when it
+claims history cannot be rewritten.
+
+Fixed by making both operations properties of the *links* rather than of a sort — the tail is
+the entry nothing points at, and `verify_chain` walks from the origin and reports whatever it
+cannot reach. Removed rows, forged links, and a missing origin all still fail loudly and have
+tests.
+
+**What this adds to the method.** F1–F8 asked "does anything exercise this path?" F9 asked
+"does the double enforce what the real dependency does?" F10 asks a third: *does anything
+assert what this code **prints**?* Every existing chain test spaced its audits thirty days
+apart, where the timestamp tie cannot occur — so the suite was green, the types were clean,
+and the demo printed `Hash chain intact: True` truthfully, because it prints that line
+*before* the distribution shift. Output that no test reads is output that can drift as freely
+as a docstring, and this project's most-watched artifact was exactly that.
+
 ---
 
 ## The aggressive questions
@@ -269,13 +308,26 @@ the ablation shows removing it costs 3 false contradictions.
 **Weakest:** Gemini's contribution is architecturally necessary and empirically unmeasured.
 The next most valuable work is a labelled set of real explanations, not another feature.
 
-**On the review itself:** five of six real findings were "described but not implemented", and
+**On the review itself:** most of the real findings were "described but not implemented", and
 none was caught by a passing test suite, a clean type check, or a clean lint. Tests verify the
-code that exists; they say nothing about code that was only ever described. The check that
-found these was reading each confident docstring and asking *what would prove this false?*
-That is worth repeating before submission, not once.
+code that exists; they say nothing about code that was only ever described. Three questions
+found everything here, and they are different questions:
+
+1. *Does anything exercise this path?* (F1–F8 — config that was read by nothing)
+2. *Does the double enforce what the real dependency does?* (F9 — a fake more forgiving than
+   the service it modelled)
+3. *Does anything assert what this code prints?* (F10 — a 158-line script checked only for
+   exit status, hiding a forked hash chain)
+
+Each was worth asking separately, and the third only occurred to anyone after the first two
+stopped finding things. That is the argument for repeating this before submission rather than
+declaring it done.
 
 **Readiness:** the scientific core, the temporal system, and the fleet boundaries are solid
-and tested. The cloud path is written and unproven. Nothing should be presented as running on
-Google Cloud until it has actually been deployed — and `/api/v1/system` now reports the real
-configuration, so that claim is checkable rather than assertable.
+and tested. The cloud path is no longer unproven — it is deployed on `ariadne-12` and the
+deployment itself found four bugs no emulator could have (a missing `google_sql_user`, a
+Cloud Build substitution that only resolves inside step args, a missing
+`roles/pubsub.subscriber` grant, and an nginx proxy loop). `/api/v1/system` reports the real
+configuration, so what is and is not running stays checkable rather than assertable — and it
+currently reports `provider: "stub"`, which is the honest answer about the one integration
+still unproven.

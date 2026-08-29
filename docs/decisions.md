@@ -8,7 +8,8 @@ meaning anything, so each one is recorded with the reasoning.
 
 ## 1. The starter verifier could not produce the required demo results
 
-**Design pack:** `backend/experiment_engine/verification.py` ships a `verify()` whose rules
+**Design pack:** the starter pack's own `experiment_engine/verification.py` ships a `verify()`
+whose rules
 are `SUPPORTED` when `expected_observed and control_effect <= abs(effect)`, `CONTRADICTED`
 when validity is high and the effect is absent, `INCONCLUSIVE` otherwise.
 
