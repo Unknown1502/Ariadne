@@ -88,8 +88,25 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [refresh]);
 
-  // Follow the newest investigation unless the reader has picked one.
-  const activeId = selectedId ?? rows[0]?.id ?? null;
+  // Open on the investigation that most needs a person, not on whatever arrived last.
+  //
+  // The backend already computes this judgement — `priority` ranks how urgently a claim
+  // deserves re-testing, and `REVIEW` is the state the Governor escalates to when it wants a
+  // human decision. The console was reading neither, so it opened on the newest row and a
+  // reader's first screen was decided by arrival order. For a console whose entire job is
+  // routing scarce human attention, that is the wrong default.
+  //
+  // Completed investigations are still one click away in the list; they just do not compete
+  // for the opening slot with work that is waiting on someone.
+  const attentionRanked = useMemo(
+    () =>
+      [...rows].sort((a, b) => {
+        const awaiting = (row: InvestigationRow) => (row.state === "REVIEW" ? 1 : 0);
+        return awaiting(b) - awaiting(a) || b.priority - a.priority;
+      }),
+    [rows],
+  );
+  const activeId = selectedId ?? attentionRanked[0]?.id ?? null;
 
   useEffect(() => {
     if (!activeId) {
