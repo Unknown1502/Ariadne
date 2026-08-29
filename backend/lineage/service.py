@@ -99,7 +99,7 @@ class LineageService:
             )
 
         history = self._ledger.lineage_for_family(verdict.claim_family_id)
-        previous = history[-1] if history else None
+        previous = self._chain_tail(history)
         relation, supersedes = self._derive_relation(verdict, history)
         moment = valid_from or self._clock.now()
 
@@ -161,6 +161,11 @@ class LineageService:
         moment = at or self._clock.now()
         view = self.view(claim_family_id, at=moment)
         appended: list[LineageEntry] = []
+        # Read the tail once, then chain onto what we just wrote. Re-reading it per
+        # iteration was the original bug: every row here shares `moment`, so the ledger's
+        # (created_at, id) tiebreak made "the last entry" arbitrary and each expiry linked
+        # back to the same predecessor - a fork wearing a chain's clothes.
+        previous = self._chain_tail(self._ledger.lineage_for_family(claim_family_id))
 
         for entry in view.entries:
             if entry.relation is LineageRelation.EXPIRES:
@@ -175,7 +180,10 @@ class LineageService:
             ):
                 continue
 
-            previous = self._ledger.lineage_for_family(claim_family_id)[-1]
+            if previous is None:  # unreachable: view.entries is non-empty here
+                raise ValidationError(
+                    f"claim family {claim_family_id} has entries to expire but no chain tail"
+                )
             payload = {
                 "expires": entry.id,
                 "reason": reason,
@@ -210,6 +218,7 @@ class LineageService:
             )
             self._ledger.append_lineage(expiry)
             appended.append(expiry)
+            previous = expiry
 
         return appended
 
@@ -326,19 +335,62 @@ class LineageService:
             return moment >= entry.valid_until
         return (moment - entry.valid_from) > self._validity
 
+    @staticmethod
+    def _chain_tail(entries: list[LineageEntry]) -> LineageEntry | None:
+        """The entry nothing else links back to — the real end of the chain.
+
+        Deliberately not ``entries[-1]``. The ledger orders by ``(created_at, id)``, and a
+        distribution shift expires every prior reading in a single clock instant, so those
+        rows tie on ``created_at`` and the tiebreak falls to a content-addressed id. "Last"
+        then means "largest hash", which is stable but arbitrary — and appending onto it
+        made four entries share one predecessor. Being the tail is a property of the links,
+        so it is read from the links.
+        """
+        if not entries:
+            return None
+        linked = {entry.previous_entry_hash for entry in entries if entry.previous_entry_hash}
+        tails = [entry for entry in entries if entry.entry_hash not in linked]
+        if len(tails) == 1:
+            return tails[0]
+        # Zero tails means a cycle; more than one means the chain already forked. Both are
+        # corruption this method cannot repair, and verify_chain reports them. Fall back to
+        # arrival order so the caller still writes an entry that shows up in that report,
+        # rather than guessing at a branch and burying the damage deeper.
+        return entries[-1]
+
     def verify_chain(self, claim_family_id: str) -> list[str]:
         """Recompute the hash chain and report entries whose link is broken.
 
         An empty list means the history is intact. A non-empty one means a row was altered
         or removed behind the ledger's back.
+
+        This walks the links rather than trusting the ledger's sort order. A hash chain is a
+        linked list; comparing it against ``ORDER BY (created_at, id)`` conflates two
+        different things, and reported an intact history as broken every time more than one
+        entry shared a timestamp. Walking reports exactly the rows genuinely unreachable
+        from the origin — which is what "broken" was always supposed to mean.
         """
-        broken: list[str] = []
-        previous_hash: str | None = None
-        for entry in self._ledger.lineage_for_family(claim_family_id):
-            if entry.previous_entry_hash != previous_hash:
-                broken.append(entry.id)
-            previous_hash = entry.entry_hash
-        return broken
+        entries = self._ledger.lineage_for_family(claim_family_id)
+        if not entries:
+            return []
+
+        following: dict[str | None, list[LineageEntry]] = {}
+        for entry in entries:
+            following.setdefault(entry.previous_entry_hash, []).append(entry)
+
+        origins = following.get(None, [])
+        if len(origins) != 1:
+            # No single starting point: nothing in the family can be trusted to verify.
+            return sorted(entry.id for entry in entries)
+
+        reachable: set[str] = set()
+        cursor: LineageEntry | None = origins[0]
+        while cursor is not None and cursor.id not in reachable:
+            reachable.add(cursor.id)
+            successors = following.get(cursor.entry_hash, [])
+            # A fork is a break: past this point no single history exists to verify.
+            cursor = successors[0] if len(successors) == 1 else None
+        return sorted(entry.id for entry in entries if entry.id not in reachable)
 
     # -- helpers -----------------------------------------------------------------------
 

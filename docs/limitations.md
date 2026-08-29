@@ -119,11 +119,14 @@ access can alter rows. `verify_integrity()` will report it; nothing prevents it.
 
 ## Engineering
 
-**The cloud adapters have never run against a deployed Google Cloud project — but they have
-now run against the real services.** This line used to say the Firestore and Pub/Sub
-adapters were covered only by hand-written doubles. That was true, and it was the reason a
-real defect (F9, below) survived 675 passing tests: the double raised whatever exception the
-adapter's code happened to expect, so a mismatch between the two could never surface.
+**The cloud adapters have now run against emulators *and* against a deployed project.** This
+line has been rewritten twice, and both rewrites are the point. It first said the Firestore
+and Pub/Sub adapters were covered only by hand-written doubles — true, and the reason a real
+defect (F9, below) survived 675 passing tests: the double raised whatever exception the
+adapter's code happened to expect, so a mismatch between the two could never surface. It
+then said they had run against emulators but never a deployed project. That is also no
+longer true, and leaving it would have been the same failure in the opposite direction —
+a document understating its own system is still a document that is wrong.
 
 `tests/integration/test_firestore_emulator.py` and `tests/integration/test_pubsub_emulator.py`
 now run `FirestoreRuntimeStore` and `PubSubEventBus` against
@@ -135,16 +138,40 @@ comment — `publish`, the streaming-pull callback, ack, nack, `publish_duplicat
 executed against a real broker, including the exact scenario F9 was found in: two
 `FirestoreRuntimeStore` instances racing `claim()` on an identical idempotency key.
 
-**What this still does not establish**, because an emulator is not a deployed project: IAM
-and permission boundaries, multi-region consistency, quota and rate-limit behaviour, network
-partition handling, and cost. Both test files are skipped unless `FIRESTORE_EMULATOR_HOST` /
-`PUBSUB_EMULATOR_HOST` are set, so the default suite — the one that must pass with no Google
-account — is unaffected; run them explicitly to reproduce (commands are in each file's
-docstring). No claim of full cloud proof is made here; the claim is narrower and now true:
-*the adapters have been checked against the real client libraries, not just against a
-double built by the same person who wrote the adapter.*
+Both test files are skipped unless `FIRESTORE_EMULATOR_HOST` / `PUBSUB_EMULATOR_HOST` are
+set, so the default suite — the one that must pass with no Google account — is unaffected;
+run them explicitly to reproduce (commands are in each file's docstring).
 
-**Gemini remains genuinely unverified.** There is no equivalent emulator for the Gemini API.
+**Then it was deployed, and the emulator's blind spots turned out to be real.** Project
+`ariadne-12`, `asia-south1`: Cloud Run, Pub/Sub, Firestore, and Cloud SQL, with
+`/api/v1/system` reporting the live wiring. The two failures that found were exactly the
+two an emulator cannot model:
+
+- **IAM.** The worker's service account was missing `roles/pubsub.subscriber`. Publishing
+  returned 200 and the message then sat in the subscription forever. Under an emulator there
+  are no permissions to get wrong, so nothing had ever exercised that boundary — and the
+  demo's headline claim ("the worker wakes up with nobody clicking Analyze") was false in
+  the only environment that counted.
+- **Cost and lifecycle**, in the scale-to-zero tension documented below.
+
+**What is still not established:** multi-region consistency, quota and rate-limit behaviour
+under load, and network partition handling. The deployment is single-region and has served
+one demo's worth of traffic, which is not evidence about any of those.
+
+**Gemini as the *agent* LLM remains genuinely unverified — which is not the same Gemini the
+Scientific section reports auditing.** Two separate surfaces, and conflating them would let
+one real result cover for an untested path:
+
+| | what it is | status |
+|---|---|---|
+| `experiment_engine/gemini_target.py` | Gemini as the **target** being audited | 68 live Vertex AI calls, recorded in `docs/real-model-audit.md` |
+| `agents/llm.py` (`GeminiClient`) | Gemini as the **Investigator** proposing experiments | never called live |
+
+The deployed system reports `reasoner.provider = "stub"` on `/api/v1/system` — the offline
+deterministic reasoner — so the live demo has never exercised `GeminiClient` either. It
+being the honest answer is exactly why that endpoint exists.
+
+There is no equivalent emulator for the Gemini API.
 `GeminiClient` was instead checked against the live `google-genai` SDK documentation and
 exception model (see F9), and `tests/unit/test_gemini_response_handling.py` exercises its
 `finish_reason` / `prompt_feedback` handling against doubles shaped like real SDK response
@@ -187,6 +214,29 @@ scale-to-zero) rather than a background pull loop; that is a real code change, n
 Terraform's own default (`min_instance_count = 0`) is left as the honest baseline: a
 deployment that needs to actually process events reliably must set `--min-instances=1` and
 `--no-cpu-throttling`, and pay for it.
+
+**The hash chain forked whenever two entries shared a timestamp, and nothing noticed for
+the same reason nothing ever notices: no test looked.** `expire_evidence` writes one EXPIRES
+row per affected reading, all stamped with one `moment`, and re-read "the previous entry" as
+`lineage_for_family(...)[-1]`. That query orders by `(created_at, id)`; with `created_at`
+tied across the batch the tiebreak fell to `id` — a *content-addressed hash*. "Last" meant
+"largest hash", so every row after the first linked back to the same predecessor. One
+distribution shift produced four entries claiming one parent, three unreachable from the
+origin.
+
+It failed in both directions at once. `verify_chain` compared links against sort order and
+reported an untouched history as **broken** — an integrity check crying wolf is an integrity
+check people stop reading. And the chain really had forked, so a whole branch could be
+dropped and the walk would never miss it: tamper-evidence quietly weakened in the one
+structure this project points at when it says history cannot be rewritten.
+
+Every existing chain test spaced its audits thirty days apart, where the tie cannot happen.
+What surfaced it was finally asserting `run_demo.py`'s output instead of only its exit code
+— the script had been printing `Hash chain intact: True` truthfully, because it prints that
+line *before* the distribution shift. Fixed: the tail is read from the links (the entry
+nothing points at) rather than from a sort, `verify_chain` walks the chain instead of
+trusting row order, and `tests/integration/test_lineage_chain_integrity.py` collapses the
+timestamps deliberately. Eleven of its tests fail against the old code.
 
 **A partial run left append-only-detectable debris, on purpose.** The first (broken, no
 subscriber-permission) deployment attempt let one investigation start and fail partway
