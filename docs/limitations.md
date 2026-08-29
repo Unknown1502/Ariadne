@@ -30,7 +30,7 @@ This is deliberate — it is what makes the verifier's own accuracy measurable �
 zero external validity. Nothing here establishes clinical, financial, or legal performance,
 and the laboratory is labelled as such in every surface that displays it.
 
-**Connecting a real model: the path exists and is tested; it has not been walked.**
+**Connecting a real model: the path exists, is tested, and has now been walked.**
 `backend/experiment_engine/adapters.py` provides the integration seam — feature-space
 contract, codec, transport, bounded retry, budget cap, caching, and replication — and
 `docs/integrating-a-real-model.md` documents it. The load-bearing test runs the synthetic
@@ -52,13 +52,27 @@ measured" a checked claim rather than an assertion. Three things this genuinely 
   instability probe report perfect stability for a model that has none — a silent false
   negative on the gate protecting verdict integrity — so the adapter refuses to do it.
 
-**What it does not resolve, and cannot:** a model that will not accept perturbed inputs cannot
-be audited by *any* intervention-based method; a model that detects probing defeats
+**It has now run against a live third-party model.** `backend/experiment_engine/gemini_target.py`
+audits Gemini 2.5 Flash through Vertex AI, and `backend/scripts/probe_real_model.py` runs the
+full onboarding-then-audit sequence against it. A real run (68 live calls) is recorded in
+`docs/real-model-audit.md`. Two things that only a real model could have shown:
+
+- **Gemini is measurably non-deterministic at temperature 0** — observed spread up to 0.165
+  on identical inputs across repeated runs. The synthetic laboratory could never have
+  surfaced this, and it is exactly the case `measure_noise_floor` / `replicates_needed`
+  exist for.
+- **The first live call hit `MAX_TOKENS`**, because Gemini 2.5 spends output tokens on
+  internal reasoning before answering. Without the `finish_reason` check added earlier
+  (F9), that would have surfaced as "malformed JSON" and sent the next person debugging the
+  prompt instead of the token budget.
+
+**What still does not resolve, and cannot:** a model that will not accept perturbed inputs
+cannot be audited by *any* intervention-based method; a model that detects probing defeats
 behavioural testing entirely; and `neutral_value` remains a domain judgement that no adapter
-can supply (see "Counterfactual validity is domain-dependent" above). And this layer has
-never run against a live third-party model — it is tested against fakes and against the real
-laboratory served through a fake transport, which is stronger than "it type-checks" and
-weaker than "it works in production."
+can supply (see "Counterfactual validity is domain-dependent" above). The Gemini run also
+inherits every scientific limitation above — it is one model, one prompt shape, one
+distribution, and a `SUPPORTED` verdict there means what it means everywhere else in this
+system: true of that model version, on that data, under that intervention protocol.
 
 ## Operational
 
