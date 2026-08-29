@@ -24,6 +24,7 @@ from typing import Protocol
 from backend.core.clock import Clock, SystemClock
 from backend.core.enums import RunKind
 from backend.core.errors import (
+    AriadneError,
     InterventionRejected,
     TargetModelError,
     ValidationError,
@@ -246,9 +247,19 @@ class ExperimentRunner:
         started = time.perf_counter()
         try:
             output = model.predict(features)
-        except ValidationError:
-            raise
-        except Exception as exc:  # target model failures are retryable, not verdicts
+        except AriadneError as exc:
+            # A typed Ariadne error already carries its own retryability. Re-wrapping a
+            # non-retryable one as TargetModelError (which IS retryable) would tell the
+            # worker to try again at exactly the moment retrying is guaranteed to fail --
+            # a budget exhaustion, for instance, is caused by calls, so retrying spends
+            # more money to reach the identical outcome. Let those through untouched and
+            # only relabel genuinely transient failures.
+            if not exc.retryable:
+                raise
+            raise TargetModelError(
+                f"target model failed on {kind} case {index}: {exc}"
+            ) from exc
+        except Exception as exc:  # an untyped remote failure is assumed transient
             raise TargetModelError(
                 f"target model failed on {kind} case {index}: {exc}"
             ) from exc

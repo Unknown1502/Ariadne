@@ -92,6 +92,19 @@ class StorageError(AriadneError):
     retryable = True
 
 
+class BudgetExhausted(AriadneError):
+    """A target model's call or spend budget ran out mid-experiment.
+
+    Deliberately not retryable: retrying is exactly the thing that exhausted the budget.
+    Raised rather than silently truncating the experiment, because an experiment that
+    quietly ran fewer cases than its plan declared would produce evidence whose sample size
+    does not match its own record - and the verifier would then reason about a claim using
+    numbers the plan never authorised.
+    """
+
+    retryable = False
+
+
 class QuarantinedInput(ValidationError):
     """External text was quarantined as an injection or poisoning attempt."""
 

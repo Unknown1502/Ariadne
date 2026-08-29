@@ -30,6 +30,36 @@ This is deliberate — it is what makes the verifier's own accuracy measurable �
 zero external validity. Nothing here establishes clinical, financial, or legal performance,
 and the laboratory is labelled as such in every surface that displays it.
 
+**Connecting a real model: the path exists and is tested; it has not been walked.**
+`backend/experiment_engine/adapters.py` provides the integration seam — feature-space
+contract, codec, transport, bounded retry, budget cap, caching, and replication — and
+`docs/integrating-a-real-model.md` documents it. The load-bearing test runs the synthetic
+laboratory model through the *entire* remote stack and requires the identical verdict and
+reason codes, which is what makes "the adapter changes how the model is reached, not what is
+measured" a checked claim rather than an assertion. Three things this genuinely resolves:
+
+- **Cost** is bounded by construction. `BudgetedTargetModel` raises `BudgetExhausted` rather
+  than silently running fewer cases than the plan declared — an experiment whose sample size
+  contradicts its own record is worse than no experiment. (Building this surfaced a real bug:
+  the runner wrapped every exception as retryable, so a budget exhaustion would have been
+  retried, spending more money to reach the same certain failure. Fixed.)
+- **Non-determinism** is measured rather than assumed away. `measure_noise_floor` samples a
+  model's self-disagreement; `replicates_needed` converts that into the number of averaged
+  calls an effect needs to clear its own noise floor — quadratic in the noise, so a model
+  whose noise equals the effect being measured costs 16× to audit. That is the honest price,
+  surfaced before the bill rather than after.
+- **Unsound caching** is prevented, not documented. Caching a stochastic model would make the
+  instability probe report perfect stability for a model that has none — a silent false
+  negative on the gate protecting verdict integrity — so the adapter refuses to do it.
+
+**What it does not resolve, and cannot:** a model that will not accept perturbed inputs cannot
+be audited by *any* intervention-based method; a model that detects probing defeats
+behavioural testing entirely; and `neutral_value` remains a domain judgement that no adapter
+can supply (see "Counterfactual validity is domain-dependent" above). And this layer has
+never run against a live third-party model — it is tested against fakes and against the real
+laboratory served through a fake transport, which is stronger than "it type-checks" and
+weaker than "it works in production."
+
 ## Operational
 
 **Explanation Debt is not a scientific quantity.** It is a prioritization signal whose weights
