@@ -48,7 +48,7 @@ No Google Cloud account. No API key. No network.
 ```bash
 python -m venv .venv && .venv/Scripts/activate    # or source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                            # 628 tests, all hermetic
+pytest                                            # 783 tests, hermetic (24 need Docker, skip cleanly)
 python -m backend.scripts.run_demo                # the whole story, end to end
 python -m benchmark.run_benchmark                 # scored against deterministic ground truth
 ```
@@ -178,7 +178,7 @@ the verifier can be scored rather than believed.
 backend/
   core/            contracts, enums, state machine, hashing, IDs, clock
   agents/          Investigator, Experimenter, Governor advisor, registry, sanitizer, audit
-  experiment_engine/  target models, distributions, interventions, runner
+  experiment_engine/  target models, distributions, interventions, runner, remote adapters
   verifier/        deterministic statistics and the verdict rules   <- no LLM, ever
   lineage/         append-only claim history
   debt/            Explanation Debt
@@ -215,6 +215,8 @@ badge over a regex.
 - [Threat model](docs/threat-model.md) — what an attacker controls and what stops them
 - [Evaluation](docs/evaluation.md) — benchmark design and what the numbers do not mean
 - [Deployment](docs/deployment.md) — Google Cloud, cost controls, what to prove
+- [Integrating a real model](docs/integrating-a-real-model.md) — the adapter seam, and the honest cost of pointing this at a model you did not write
+- [Real-model audit](docs/real-model-audit.md) — Ariadne auditing Gemini 2.5 Flash, and what only a live model could reveal
 - [Demo script](docs/demo-script.md) — the four minutes, with the exact commands
 - [Limitations](docs/limitations.md) — what this does not establish
 - [Decisions](docs/decisions.md) — where the build deviates from the design docs, and why
@@ -228,8 +230,12 @@ results establish nothing about clinical, financial, or legal performance. Expla
 is a configurable operational risk score whose weights are a policy choice, and debt figures
 are not comparable across policy versions. High-impact actions require a human.
 
-The cloud adapters are written and typed but have never run against Google Cloud. No cloud
-proof should be claimed until they have.
+The cloud adapters have now run against Google Cloud — the console and API are deployed on
+Cloud Run with real Pub/Sub, Firestore, and Cloud SQL, and Ariadne has audited a live
+third-party model (Gemini 2.5 Flash) end to end. What that does *not* establish: the Gemini
+result is one model, one prompt shape, one distribution, over the laboratory's synthetic
+feature space. A `SUPPORTED` verdict there means exactly what it means everywhere else —
+true of that model version, on that data, under that intervention protocol.
 
 Full detail in [docs/limitations.md](docs/limitations.md).
 
