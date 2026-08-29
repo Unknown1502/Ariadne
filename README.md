@@ -18,6 +18,65 @@ v4.0.0  X  CONTRADICTED    urgency acts only through an interaction; its main ef
 
 The same explanation shipped with all four versions. Only the model underneath changed.
 
+That is the synthetic laboratory, where the formulas are printed below and any verdict can
+be checked by hand — which is what makes the verifier's *own* accuracy measurable.
+
+Then we pointed it at a model we did not write.
+
+## It has audited a real model
+
+**Gemini 2.5 Flash, live, through Vertex AI — 68 real API calls.** Gemini was asked to score
+triage cases *and* to say which signal drove each score. Ariadne then tested that
+explanation:
+
+```
+Gemini's own explanation   "The high urgency_marker signal drove this score."
+
+neutralize the signal it named        -0.194   reproducible on 7 of 8 cases
+neutralize a signal it never named    +0.002   the control barely moved
+
+VERDICT  SUPPORTED     the claimed driver outweighed its control by ~90x
+```
+
+Nobody knew that answer in advance. Two things only a live model could show:
+
+- **Gemini is measurably non-deterministic at `temperature=0`** — identical inputs gave
+  scores differing by up to **0.165**, larger than the 0.10 effect threshold. One call per
+  case would have been measuring noise as much as signal, so the audit measures the model's
+  noise floor first and derives the replicate count from it.
+- **The first live call hit `MAX_TOKENS`.** Truncated JSON is indistinguishable from
+  malformed JSON to a parser; without a `finish_reason` check it would have been retried at
+  temperature 0 into the identical truncation and blamed on the prompt.
+
+Reproduce it: `python -m backend.scripts.probe_real_model --project <your-gcp-project>`.
+Full record and scope in [docs/real-model-audit.md](docs/real-model-audit.md).
+
+## It is running
+
+| | |
+|---|---|
+| Console | **https://ariadne-console-uhcrowxnsq-el.a.run.app** |
+| API | **https://ariadne-api-uhcrowxnsq-el.a.run.app** |
+
+Google Cloud Run, with real Pub/Sub, Firestore, and Cloud SQL — not a mock. Three endpoints
+a reviewer can check without trusting anything written here:
+
+```
+/api/v1/system          what is actually wired: event bus, runtime store, database, reasoner
+/api/v1/investigations   every verdict, with its effect size and reason codes
+/api/v1/runtime          live counters: events published, processed, duplicates suppressed
+```
+
+`/api/v1/system` is the honesty endpoint — it reports the real configuration, so if it says
+`local`, the answer is local. The console renders whatever it says and never asserts more.
+
+**The idempotency guarantee, demonstrated live.** Six already-processed events were replayed
+against the deployment: `duplicates_suppressed: 6`, `investigations_started: 0`. At-least-once
+delivery is what Pub/Sub provides; exactly-once *work* is what Ariadne adds on top, and this
+is that claim being kept rather than described.
+
+Both services scale to zero, so the first request after an idle period takes a few seconds.
+
 ---
 
 ## What this actually claims
