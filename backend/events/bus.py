@@ -241,6 +241,13 @@ class LocalEventBus:
 class PubSubEventBus:
     """Google Cloud Pub/Sub adapter.
 
+    Covered by tests/integration/test_pubsub_emulator.py against a real Pub/Sub
+    emulator. Those tests skip without Docker, so in a default run these lines report
+    as uncovered -- which is the honest signal. They previously carried
+    `# pragma: no cover - needs GCP`, written before the emulator tests existed; leaving
+    it there would have excluded genuinely tested code from the measurement and
+    overstated confidence in exactly the way coverage exists to prevent.
+
     Same contract as the local bus. Pub/Sub already provides at-least-once delivery,
     retries, and dead-lettering, so this maps onto them rather than reimplementing them:
     an unacked message is redelivered, and the subscription's dead-letter policy parks
@@ -261,7 +268,7 @@ class PubSubEventBus:
 
     # -- lifecycle, matching LocalEventBus so callers need no branching -----------------
 
-    def start(self) -> None:  # pragma: no cover - needs GCP
+    def start(self) -> None:
         """Begin the streaming pull.
 
         Requires a running loop to hand messages back to, so it is started lazily by the
@@ -270,12 +277,12 @@ class PubSubEventBus:
         if self._subscription_future is None:
             self._subscription_future = self.run_subscriber(asyncio.get_event_loop())
 
-    async def stop(self) -> None:  # pragma: no cover - needs GCP
+    async def stop(self) -> None:
         if self._subscription_future is not None:
             self._subscription_future.cancel()
             self._subscription_future = None
 
-    async def publish_duplicate(self, event: AriadneEvent) -> None:  # pragma: no cover
+    async def publish_duplicate(self, event: AriadneEvent) -> None:
         """Publish the same event again, to demonstrate duplicate safety."""
         await self.publish(event)
 
@@ -309,7 +316,7 @@ class PubSubEventBus:
             "dead_letter_topic": self.dead_letter_topic,
         }
 
-    async def publish(self, event: AriadneEvent) -> None:  # pragma: no cover - needs GCP
+    async def publish(self, event: AriadneEvent) -> None:
         from google.cloud import pubsub_v1  # type: ignore[import-not-found,attr-defined]
 
         publisher = pubsub_v1.PublisherClient()
@@ -329,7 +336,7 @@ class PubSubEventBus:
             "PubSubEventBus is driven by a streaming pull subscriber, not by drain()"
         )
 
-    def run_subscriber(self, loop: asyncio.AbstractEventLoop) -> Any:  # pragma: no cover
+    def run_subscriber(self, loop: asyncio.AbstractEventLoop) -> Any:
         """Start a streaming pull. Acks only after the handler succeeds.
 
         Acking before the work is done would convert an at-least-once system into an
