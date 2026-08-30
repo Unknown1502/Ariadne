@@ -24,6 +24,11 @@ import {
 import { Investigation } from "./components/Investigation";
 import { Debt, Fleet, Lineage, Runtime } from "./components/Panels";
 import {
+  Connections,
+  ExplanationSources,
+  FeatureSemanticsPanel,
+} from "./components/Configuration";
+import {
   Infrastructure,
   ModeBanner,
   NeedsAttention,
@@ -349,6 +354,14 @@ export default function App() {
       )}
 
       <Infrastructure system={system} runtimeOk={(proof?.worker?.events_seen ?? 0) > 0} />
+
+      {/* Configuration: what a governance team connects and declares before Ariadne can
+          verify anything about their model. Placed after the evidence rather than before it
+          because a first-time reader should see what the product concludes before being
+          shown the forms that feed it. */}
+      <Connections />
+      <FeatureSemanticsPanel />
+      <ExplanationSources onIngested={() => void refresh()} />
 
       {fleet.length > 0 && <Fleet agents={fleet} />}
 

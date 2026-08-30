@@ -314,8 +314,167 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+
+/* -- operator configuration ----------------------------------------------------------
+   Connections, feature semantics and explanation sources: what an organisation supplies
+   before Ariadne can verify anything about their model. Every field here is served by the
+   backend; the console never invents one. */
+
+export type ConnectionStatus = "NOT_CONFIGURED" | "OK" | "FAILED" | "DISABLED";
+
+export interface ProbeCheck {
+  name: string;
+  passed: boolean;
+  detail: string;
+}
+
+export interface ProbeResult {
+  connection_id: string;
+  ok: boolean;
+  checks: ProbeCheck[];
+  error: string | null;
+  latency_ms: number;
+  checked_at: string;
+}
+
+export interface Connection {
+  id: string;
+  kind: string;
+  name: string;
+  transport: string;
+  endpoint: string;
+  model_id: string;
+  model_version: string;
+  project: string;
+  region: string;
+  credential_ref: string;
+  enabled: boolean;
+  status: ConnectionStatus;
+  last_checked_at: string | null;
+  last_success_at: string | null;
+  last_failure_at: string | null;
+  last_error: string | null;
+  probe_detail: Record<string, string>;
+  configuration_version: number;
+}
+
+export interface FeatureSemantics {
+  id: string;
+  model_id: string;
+  name: string;
+  description: string;
+  data_type: string;
+  minimum: number | null;
+  maximum: number | null;
+  allowed_values: string[];
+  neutral_strategy: string;
+  neutral_value: number | null;
+  neutral_category: string;
+  validated: boolean;
+  validation_errors: string[];
+  configuration_version: number;
+}
+
+export interface ExplanationSource {
+  id: string;
+  model_id: string;
+  name: string;
+  source_type: string;
+  endpoint: string;
+  enabled: boolean;
+  received_count: number;
+  last_received_at: string | null;
+}
+
+export interface ReceivedExplanation {
+  id: string;
+  source_id: string;
+  model_id: string;
+  model_version: string;
+  distribution_version: string;
+  decision: string;
+  explanation: string;
+  received_at: string;
+}
+
 export const api = {
   system: () => request<SystemInfo>("/api/v1/system"),
+
+  // -- configuration -----------------------------------------------------------------
+
+  connections: () =>
+    request<{ connections: Connection[]; live: number; total: number }>(
+      "/api/v1/connections",
+    ),
+
+  createConnection: (body: Record<string, unknown>) =>
+    request<Connection>("/api/v1/connections", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  /** Really talks to the other side. The only thing that can make a connection live.
+   *
+   * Sends an explicit empty body. Google's front end rejects a POST with no
+   * `Content-Length` header with HTTP 411 before the request ever reaches Cloud Run -
+   * browsers happen to send `Content-Length: 0`, but relying on that would make the API
+   * unusable from any client that does not. */
+  testConnection: (id: string) =>
+    request<ProbeResult>(`/api/v1/connections/${id}/test`, {
+      method: "POST",
+      body: "{}",
+    }),
+
+  deleteConnection: async (id: string) => {
+    const response = await fetch(`${BASE}/api/v1/connections/${id}`, { method: "DELETE" });
+    if (!response.ok) throw new Error(`${response.status} deleting ${id}`);
+  },
+
+  features: (modelId?: string) =>
+    request<{ features: FeatureSemantics[]; ready: number; total: number }>(
+      `/api/v1/feature-semantics${modelId ? `?model_id=${modelId}` : ""}`,
+    ),
+
+  createFeature: (body: Record<string, unknown>) =>
+    request<FeatureSemantics>("/api/v1/feature-semantics", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  validateFeature: (id: string) =>
+    request<{
+      feature_id: string;
+      testable: boolean;
+      problems: string[];
+      resolved_neutral: number | string | null;
+      reason: string | null;
+    }>(`/api/v1/feature-semantics/${id}/validate`, { method: "POST", body: "{}" }),
+
+  deleteFeature: async (id: string) => {
+    const response = await fetch(`${BASE}/api/v1/feature-semantics/${id}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) throw new Error(`${response.status} deleting ${id}`);
+  },
+
+  explanationSources: () =>
+    request<{ sources: ExplanationSource[]; total: number }>("/api/v1/explanation-sources"),
+
+  createExplanationSource: (body: Record<string, unknown>) =>
+    request<ExplanationSource>("/api/v1/explanation-sources", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  ingestExplanation: (sourceId: string, body: Record<string, unknown>) =>
+    request<{ accepted: boolean; explanation_id: string; event_id: string; note: string }>(
+      `/api/v1/explanation-sources/${sourceId}/ingest`,
+      { method: "POST", body: JSON.stringify(body) },
+    ),
+
+  explanations: () =>
+    request<{ explanations: ReceivedExplanation[]; total: number }>("/api/v1/explanations"),
+
 
   models: (modelId = "synthetic-triage") =>
     request<{ model_id: string; versions: ModelVersionInfo[]; disclaimer: string }>(

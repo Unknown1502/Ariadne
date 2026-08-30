@@ -1040,3 +1040,147 @@ a:focus-visible {
   .infra__status, .infra__purpose { grid-column: 2; }
   .mode__reasoner { margin-left: 0; }
 }
+
+/* ================================================================== configuration ===
+   Connections, feature semantics, explanation sources. Status colour is earned: the
+   NOT_CONFIGURED state is deliberately neutral grey rather than a warning colour, because
+   "you have not tested this yet" is not a fault.
+   ================================================================================== */
+
+.cfg__list { list-style: none; margin: 0 0 14px; padding: 0; }
+.cfg__row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 14px;
+  margin-bottom: 8px;
+  border: 1px solid var(--graticule);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.cfg__row--OK { border-left-color: var(--supported); }
+.cfg__row--FAILED { border-left-color: var(--contradicted); }
+.cfg__row--NOT_CONFIGURED { border-left-color: var(--muted); }
+.cfg__row--DISABLED { border-left-color: var(--faint); }
+.cfg__main { flex: 1; min-width: 0; }
+.cfg__actions { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.cfg__name {
+  margin: 0 0 4px;
+  font-weight: 600;
+  font-size: 13.5px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.cfg__status {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 2px;
+  background: var(--panel-raised);
+  color: var(--muted);
+}
+.cfg__status--OK { color: var(--supported); }
+.cfg__status--FAILED { color: var(--contradicted); }
+.cfg__meta { margin: 0 0 3px; font-size: 11.5px; color: var(--text-dim); word-break: break-all; }
+.cfg__err { margin: 4px 0 0; font-size: 12px; color: var(--contradicted); }
+.cfg__error {
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--contradicted);
+  border-radius: var(--radius);
+  color: var(--contradicted);
+  font-size: 12.5px;
+}
+.cfg__note {
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--supported);
+  border-radius: var(--radius);
+  color: var(--supported);
+  font-size: 12px;
+}
+.cfg__problems {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--contradicted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+/* -- probe report: what the connection test actually observed --------------------- */
+.probe {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--graticule);
+  background: var(--panel-raised);
+}
+.probe--ok { border-color: rgba(63, 182, 168, 0.4); }
+.probe--bad { border-color: rgba(228, 87, 46, 0.4); }
+.probe__head { margin: 0 0 6px; font-size: 12.5px; font-weight: 600; }
+.probe__checks { list-style: none; margin: 0; padding: 0; font-size: 12px; }
+.probe__checks li { padding: 3px 0; display: flex; gap: 8px; align-items: baseline; }
+.probe__name {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  min-width: 116px;
+  color: var(--text-dim);
+}
+.probe__detail { color: var(--text-dim); flex: 1; }
+
+/* -- forms ------------------------------------------------------------------------ */
+.cfg__form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+  margin-top: 14px;
+  padding: 16px;
+  border: 1px solid var(--graticule);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.cfg__form label,
+.cfg__ingest {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+.cfg__form input,
+.cfg__form select,
+.cfg__ingest textarea {
+  padding: 8px 10px;
+  border: 1px solid var(--graticule);
+  border-radius: 2px;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+.cfg__ingest { margin-top: 8px; }
+.cfg__ingest textarea { font-family: var(--font-body); resize: vertical; }
+.cfg__form input:focus-visible,
+.cfg__form select:focus-visible,
+.cfg__ingest textarea:focus-visible {
+  outline: 2px solid var(--supported);
+  outline-offset: 1px;
+}
+.cfg__form .btn { grid-column: 1 / -1; justify-self: start; }
+.cfg__hint {
+  font-size: 11px;
+  color: var(--faint);
+  line-height: 1.5;
+  letter-spacing: 0;
+}
+
+@media (max-width: 720px) {
+  .cfg__row { flex-direction: column; }
+  .cfg__actions { flex-direction: row; }
+}
