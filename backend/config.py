@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     """`stub` is a deterministic offline reasoner. It is the default so the test suite and
     the scientific core never depend on a network call or an API key."""
 
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.5-flash"
     gemini_max_output_tokens: int = Field(default=2048, ge=256, le=32768)
     google_api_key: str = ""
 

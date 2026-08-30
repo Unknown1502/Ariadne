@@ -23,32 +23,45 @@ be checked by hand — which is what makes the verifier's *own* accuracy measura
 
 Then we pointed it at a model we did not write.
 
-## It has audited a real model
+## It has audited real models — and they disagree
 
-**Gemini 2.5 Flash, live, through Vertex AI — 68 real API calls.** Gemini was asked to score
-triage cases *and* to say which signal drove each score. Ariadne then tested that
-explanation:
+**Gemini 3.5 Flash and Gemini 2.5 Flash, live through Vertex AI.** Each was asked to score
+triage cases *and* to name the signal that drove each score. Ariadne then tested that
+explanation with a controlled intervention and a control arm.
 
-```
-Gemini's own explanation   "The high urgency_marker signal drove this score."
+The same explanation. Two model versions. **Two different answers.**
 
-neutralize the signal it named        -0.194   reproducible on 7 of 8 cases
-neutralize a signal it never named    +0.002   the control barely moved
+| | Gemini 2.5 Flash | Gemini 3.5 Flash |
+|---|---|---|
+| deterministic at `temperature=0`? | **No** — spread up to 0.165 | **Yes** — spread 0.000000 |
+| neutralize the signal it named | −0.194 | −0.141 |
+| neutralize a signal it never named | +0.002 | −0.054 |
+| reproducible on | 7 of 8 cases (0.875) | 11 of 16 cases (0.688) |
+| **verdict** | **SUPPORTED** | **INCONCLUSIVE** |
 
-VERDICT  SUPPORTED     the claimed driver outweighed its control by ~90x
-```
+That is the entire thesis, on real models, in one table. An explanation is not true or false —
+it is true *of a model version*. Ariadne re-tests it when the version changes and reports what
+it finds, including when what it finds is "I cannot tell."
 
-Nobody knew that answer in advance. Two things only a live model could show:
+**The 3.5 result is the more interesting one.** Its mean effect (−0.141) clears the 0.10
+threshold and beats its control by 2.6×. A system looking only at averages would call that
+SUPPORTED. Ariadne does not, because the effect appears on **only 69% of cases** — below the
+0.80 reproducibility bar. Neither reproducibly present nor reproducibly absent is exactly what
+INCONCLUSIVE is for, and refusing to answer there is the single hardest thing to get a system
+to do.
 
-- **Gemini is measurably non-deterministic at `temperature=0`** — identical inputs gave
-  scores differing by up to **0.165**, larger than the 0.10 effect threshold. One call per
-  case would have been measuring noise as much as signal, so the audit measures the model's
-  noise floor first and derives the replicate count from it.
-- **The first live call hit `MAX_TOKENS`.** Truncated JSON is indistinguishable from
-  malformed JSON to a parser; without a `finish_reason` check it would have been retried at
-  temperature 0 into the identical truncation and blamed on the prompt.
+**Two findings only a live model could produce:**
 
-Reproduce it: `python -m backend.scripts.probe_real_model --project <your-gcp-project>`.
+- **Gemini 2.5 was measurably non-deterministic at `temperature=0`** — identical inputs gave
+  scores differing by up to **0.165**, larger than the effect threshold itself. **Gemini 3.5
+  is not**: 0.000000 spread across every repeated call. The audit measures each model's noise
+  floor before trusting any effect, and derives the replicate count from it — which is why the
+  same code handles both without anyone tuning it.
+- **The first live call hit `MAX_TOKENS`.** Truncated JSON is indistinguishable from malformed
+  JSON to a parser; without a `finish_reason` check it would have been retried at temperature 0
+  into the identical truncation and blamed on the prompt.
+
+Reproduce: `python -m backend.scripts.probe_real_model --project <your-gcp-project>`.
 Full record and scope in [docs/real-model-audit.md](docs/real-model-audit.md).
 
 ## It is running

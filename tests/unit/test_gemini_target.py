@@ -219,11 +219,11 @@ class TestAssembly:
         # Conflating them would either break VersionScope's semver validation or smuggle a
         # vendor string into the field identifying what a verdict is true *of*.
         model, transport = build_gemini_target(
-            project="p", gemini_model="gemini-2.5-flash", scope_version="2.0.0"
+            project="p", gemini_model="gemini-3.5-flash", scope_version="2.0.0"
         )
         assert model.version == "2.0.0"
-        assert transport.model == "gemini-2.5-flash"
-        assert "gemini-2.5-flash" in model.model_id
+        assert transport.model == "gemini-3.5-flash"
+        assert "gemini-3.5-flash" in model.model_id
 
     def test_it_defaults_to_the_laboratory_feature_space(self) -> None:
         model, _ = build_gemini_target(project="p")

@@ -37,8 +37,12 @@ from backend.experiment_engine.adapters import (
 )
 from backend.experiment_engine.distributions import FEATURE_INDEX, FeatureSpec
 
-DEFAULT_MODEL = "gemini-2.5-flash"
-DEFAULT_LOCATION = "us-central1"
+DEFAULT_MODEL = "gemini-3.5-flash"
+DEFAULT_LOCATION = "global"
+"""Vertex serves `gemini-3.5-flash` from `global` and from some regions but not others -
+`us-central1`, the previous default, returns 404 NOT_FOUND for it while happily serving
+older models. That failure names the region rather than the model, so it reads like a
+project-access problem. `global` routes to wherever the model actually lives."""
 
 SYSTEM_INSTRUCTION = (
     "You are a triage prioritisation model in a synthetic laboratory. You receive three "
@@ -193,7 +197,7 @@ def build_gemini_target(
     """Build the bare remote model plus its transport, so callers can read call counts.
 
     `gemini_model` and `scope_version` are deliberately separate. The first is the vendor's
-    model name (`gemini-2.5-flash`); the second is the semver Ariadne stamps on every piece
+    model name (`gemini-3.5-flash`); the second is the semver Ariadne stamps on every piece
     of evidence, which `VersionScope` requires to be MAJOR.MINOR.PATCH. Conflating them
     would either break scope validation or smuggle a vendor string into the field that
     identifies what a verdict is true *of*.

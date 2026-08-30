@@ -131,7 +131,7 @@ class GeminiExtractor:
     letting the evaluation tune the thing being evaluated.
     """
 
-    def __init__(self, *, project: str, model: str = "gemini-2.5-flash") -> None:
+    def __init__(self, *, project: str, model: str = "gemini-3.5-flash") -> None:
         self.name = f"{model} (vertex, production prompt)"
         self._client = GeminiClient(
             model=model, use_vertex=True, project=project, max_output_tokens=2048
@@ -383,7 +383,7 @@ def main() -> None:
     parser.add_argument("--out", default=None, help="directory for the report")
     parser.add_argument("--gemini", action="store_true", help="run the live Gemini arm")
     parser.add_argument("--project", default="", help="GCP project for --gemini")
-    parser.add_argument("--model", default="gemini-2.5-flash", help="Gemini model id")
+    parser.add_argument("--model", default="gemini-3.5-flash", help="Gemini model id")
     parser.add_argument(
         "--version", default="2.0.0",
         help="target model version for the propagation analysis (default 2.0.0, where the "

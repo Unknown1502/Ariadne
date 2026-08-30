@@ -76,7 +76,7 @@ class FakeGenAIClient:
 
 
 def client_returning(response: Any) -> tuple[GeminiClient, FakeGenAIClient]:
-    client = GeminiClient(model="gemini-2.5-flash", api_key="test-key")
+    client = GeminiClient(model="gemini-3.5-flash", api_key="test-key")
     fake = FakeGenAIClient(response)
     client._client = fake  # skip the network entirely
     return client, fake
@@ -160,7 +160,7 @@ class TestHealthyResponses:
 
 class TestRequestConstruction:
     def test_the_configured_token_ceiling_is_applied(self) -> None:
-        client = GeminiClient(model="gemini-2.5-flash", api_key="k", max_output_tokens=512)
+        client = GeminiClient(model="gemini-3.5-flash", api_key="k", max_output_tokens=512)
         fake = FakeGenAIClient(FakeResponse())
         client._client = fake
         client.generate(LLMRequest(system="s", user="u", task="t", max_output_tokens=8192))
@@ -186,7 +186,7 @@ class TestRequestConstruction:
 
     def test_a_thinking_budget_can_be_raised_when_a_task_needs_it(self) -> None:
         """Disabled by default, not disabled by force - the ceiling stays configurable."""
-        client = GeminiClient(model="gemini-2.5-flash", api_key="k", thinking_budget=512)
+        client = GeminiClient(model="gemini-3.5-flash", api_key="k", thinking_budget=512)
         fake = FakeGenAIClient(FakeResponse())
         client._client = fake
         client.generate(REQUEST)
@@ -226,7 +226,7 @@ class TestRetryLoopIntegration:
                 pass
 
         class TruncatingLLM:
-            model_name = "gemini-2.5-flash"
+            model_name = "gemini-3.5-flash"
             is_language_model = True
 
             def __init__(self) -> None:
@@ -269,7 +269,7 @@ class TestRetryLoopIntegration:
                 pass
 
         class TruncatingLLM:
-            model_name = "gemini-2.5-flash"
+            model_name = "gemini-3.5-flash"
             is_language_model = True
 
             def generate(self, request: LLMRequest) -> Any:

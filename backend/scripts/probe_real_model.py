@@ -122,8 +122,8 @@ def build_claim_and_plan(
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--project", required=True, help="GCP project id")
-    parser.add_argument("--location", default="us-central1")
-    parser.add_argument("--gemini-model", default="gemini-2.5-flash")
+    parser.add_argument("--location", default="global")
+    parser.add_argument("--gemini-model", default="gemini-3.5-flash")
     parser.add_argument("--repetitions", type=int, default=8, help="fixture cases per arm")
     parser.add_argument("--threshold", type=float, default=0.10, help="min effect threshold")
     parser.add_argument("--noise-cases", type=int, default=3)

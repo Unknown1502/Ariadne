@@ -167,7 +167,7 @@ such everywhere it appears. It is not billing data.
 
 This is a hackathon budget, and the design assumes it:
 
-- **Flash-first.** `gemini-2.5-flash` by default; the reasoning calls are small and structured.
+- **Flash-first.** `gemini-3.5-flash` by default; the reasoning calls are small and structured.
 - **Three LLM calls per investigation**, not a conversation loop. The `loop_budget` caps
   retries at 3 and then quarantines rather than spinning.
 - **The target model is arithmetic.** Experiment execution costs nothing — 72 model calls per
