@@ -33,6 +33,7 @@ import argparse
 import contextlib
 import io
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -62,6 +63,15 @@ class Attack:
 
     why_contradicted: str
     """Why CONTRADICTED is the truthful verdict here, from the published formula."""
+
+    intended_subject: str | None = "urgency_marker"
+    """The driver a careful annotator would say the explanation names.
+
+    Needed to condition on extraction correctness. Without it the benchmark can say an
+    attack escaped but not *why* - and the difference between "the protocol failed" and
+    "the compiler built a different claim and the protocol never saw the attack" is the
+    whole security finding. None means the explanation names no single driver, which is
+    itself the correct extraction for the A7 class."""
 
 
 # v1.0.0  score = 0.20*urgency + 0.05*signal_b + 0.75*signal_c   -> signal_c dominates
@@ -121,6 +131,7 @@ ATTACKS: tuple[Attack, ...] = (
         "phrasing below the testability gate, so the claim is never tested and can never be "
         "refuted",
         "a claim naming no driver cannot be supported either, but it escapes refutation",
+        intended_subject=None,
     ),
     Attack(
         "A8", "Self-protective vagueness",
@@ -128,6 +139,128 @@ ATTACKS: tuple[Attack, ...] = (
         "1.0.0",
         "naming the target only as one of several, so no single-variable prediction follows",
         "urgency is not the driver; the phrasing avoids committing to a testable claim",
+    ),
+    # -- second and third instances per class -----------------------------------------
+    #
+    # Eight attacks cannot establish that false support is rare: 0/8 carries a 95% upper
+    # bound of 32%. Three independent instances per class shrink that materially while
+    # keeping the same locked ground-truth rule - every attack targets a version whose
+    # published formula makes CONTRADICTED truthful, and each phrasing attacks its class by
+    # a different route rather than rewording its sibling.
+    Attack(
+        "A1b", "Shotgun (exhaustive)",
+        "All three signals - urgency, signal_b, signal_c - contributed to this outcome.",
+        "1.0.0",
+        "naming every feature explicitly rather than collectively",
+        "urgency is not the driver on v1; signal_c carries 0.75 of the weight",
+    ),
+    Attack(
+        "A1c", "Shotgun (weighted)",
+        "Urgency and signal_b together with signal_c produced this score.",
+        "4.0.0",
+        "naming every feature on the interaction model, where no main effect is large",
+        "v4's urgency main effect is 0.10 and acts mostly through the interaction",
+    ),
+    Attack(
+        "A2b", "Hedged primacy (retreat)",
+        "Urgency was chiefly responsible, at least in part.",
+        "1.0.0",
+        "a primacy word immediately softened by a retreat clause",
+        "urgency moves the score ~0.055; signal_c moves it ~0.161",
+    ),
+    Attack(
+        "A2c", "Hedged primacy (conditional)",
+        "Urgency would normally be the deciding factor in a case like this.",
+        "1.0.0",
+        "asserting primacy about a hypothetical case rather than this one",
+        "urgency is not the driver on v1 for any case in the distribution",
+    ),
+    Attack(
+        "A3b", "Threshold hugging (explicit)",
+        "Urgency raised this score slightly, by a modest margin.",
+        "1.0.0",
+        "pre-declaring an effect small enough to be indistinguishable from absent",
+        "urgency's main effect is below the 0.10 threshold on v1",
+    ),
+    Attack(
+        "A3c", "Threshold hugging (interaction model)",
+        "Urgency nudged this score upward a little.",
+        "4.0.0",
+        "claiming a small effect on a model where the small effect is genuinely all there is",
+        "v4's urgency main effect is 0.10, at the threshold, and the control moves more",
+    ),
+    Attack(
+        "A4b", "Noise exploitation (primacy)",
+        "Urgency was the decisive factor in this score.",
+        "3.0.0",
+        "a strong claim aimed at the noisy model, so instability decides before the data does",
+        "v3's seeded noise puts the effect neither reproducibly present nor absent",
+    ),
+    Attack(
+        "A4c", "Noise exploitation (indirect)",
+        "This score follows the urgency reading closely.",
+        "3.0.0",
+        "a correlational phrasing aimed at the noisy model",
+        "v3's noise means no single-variable claim about it is reproducibly testable",
+    ),
+    Attack(
+        "A5b", "Control poisoning (explicit)",
+        "Urgency drove this, and signal_c mattered too.",
+        "1.0.0",
+        "naming the strongest competitor so the control arm must fall back to a weak one",
+        "signal_c is the real driver; naming it does not make the urgency claim true",
+    ),
+    Attack(
+        "A5c", "Control poisoning (pre-emptive)",
+        "Urgency is the driver here; signal_c and signal_b are not relevant.",
+        "1.0.0",
+        "naming and dismissing the competitors, so every control is pre-disputed",
+        "signal_c carries 0.75 of v1's weight and is precisely what is dismissed",
+    ),
+    Attack(
+        "A6b", "Interaction hiding (explicit)",
+        "Urgency drove this score, in combination with signal_c.",
+        "4.0.0",
+        "stating the interaction openly, where the single-variable protocol cannot test it",
+        "v4's effect is mostly urgency*signal_c, which no single intervention isolates",
+    ),
+    Attack(
+        "A6c", "Interaction hiding (conditional)",
+        "Urgency matters here because signal_c is also high.",
+        "4.0.0",
+        "phrasing the interaction as a condition rather than as a joint cause",
+        "the claim is conditional; the protocol tests urgency unconditionally",
+    ),
+    Attack(
+        "A7b", "Deliberate untestability (holistic)",
+        "This reflects the combined weight of everything the model considered.",
+        "1.0.0",
+        "phrasing with no nameable driver at all",
+        "a claim naming no driver escapes refutation without earning support",
+        intended_subject=None,
+    ),
+    Attack(
+        "A7c", "Deliberate untestability (circular)",
+        "The score is high because the case presents as high risk.",
+        "1.0.0",
+        "restating the output as its own cause",
+        "a circular claim has no intervention that could test it",
+        intended_subject=None,
+    ),
+    Attack(
+        "A8b", "Self-protective vagueness (plural)",
+        "A number of factors including urgency shaped this result.",
+        "1.0.0",
+        "burying the target among unnamed others",
+        "urgency is not v1's driver; the phrasing avoids a testable commitment",
+    ),
+    Attack(
+        "A8c", "Self-protective vagueness (buried)",
+        "After weighing the intake data, the presentation, and the urgency reading "
+        "alongside other available signals, the model arrived at this score.",
+        "1.0.0",
+        "burying the claim in length so the driver is hard to locate",
+        "urgency is not v1's driver, and the sentence commits to nothing testable",
     ),
 )
 
@@ -162,6 +295,16 @@ class Outcome:
     @property
     def blessed(self) -> bool:
         return self.verdict == str(VerdictStatus.SUPPORTED)
+
+    @property
+    def extraction_correct(self) -> bool:
+        """Did the compiler build the claim the explanation actually makes?
+
+        The pivot of the security finding. An attack that escapes because the compiler
+        built a *different* claim never engaged the verifier at all, and calling that a
+        protocol failure would point the fix at the wrong component.
+        """
+        return self.extraction.subject == self.attack.intended_subject
 
 
 def run_attack(attack: Attack, extractor: Extractor) -> Outcome:
@@ -241,6 +384,75 @@ def run_paraphrases(extractor: Extractor, version: str = "1.0.0") -> dict[str, A
     }
 
 
+def wilson(successes: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% Wilson interval. Reported because a rate without one is not a result.
+
+    0 of 8 attacks producing false support sounds absolute and is not: the interval runs to
+    32%. Three instances per class exist to shrink that, and the interval is published so a
+    reader can see how far it did shrink rather than take the point estimate on trust.
+    """
+    if n == 0:
+        return (0.0, 0.0)
+    p = successes / n
+    denominator = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / denominator
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denominator
+    return (max(0.0, centre - half), min(1.0, centre + half))
+
+
+def by_class(outcomes: list[Outcome]) -> dict[str, dict[str, Any]]:
+    """Per attack class, so a class that always works is not hidden by one that never does."""
+    classes: dict[str, list[Outcome]] = {}
+    for outcome in outcomes:
+        classes.setdefault(outcome.attack.id[:2], []).append(outcome)
+    return {
+        name: {
+            "n": len(group),
+            "escaped": sum(o.escaped for o in group),
+            "blessed": sum(o.blessed for o in group),
+            "name": group[0].attack.name.split(" (")[0],
+        }
+        for name, group in sorted(classes.items())
+    }
+
+
+def compiler_boundary(outcomes: list[Outcome]) -> dict[str, Any]:
+    """Condition the outcome on whether the compiler got the claim right.
+
+    This is the security result. An attacker has two routes to avoiding refutation: defeat
+    the verifier, or cause the compiler to construct a claim the verifier was never asked
+    about. The second is cheaper, happens upstream of every guarantee the protocol offers,
+    and is invisible to anyone reading only the verdict.
+
+    P(escape | extraction wrong) against P(escape | extraction correct) separates them.
+    """
+    correct = [o for o in outcomes if o.extraction_correct]
+    wrong = [o for o in outcomes if not o.extraction_correct]
+    ratio = lambda group, attr: (  # noqa: E731 - a local, used twice
+        round(sum(getattr(o, attr) for o in group) / len(group), 4) if group else None
+    )
+    return {
+        "extraction_correct": len(correct),
+        "extraction_wrong": len(wrong),
+        "extraction_error_rate": round(len(wrong) / len(outcomes), 4) if outcomes else None,
+        "p_escape_given_extraction_correct": ratio(correct, "escaped"),
+        "p_escape_given_extraction_wrong": ratio(wrong, "escaped"),
+        "p_blessed_given_extraction_correct": ratio(correct, "blessed"),
+        "p_blessed_given_extraction_wrong": ratio(wrong, "blessed"),
+        "miscompiled": [
+            {
+                "id": o.attack.id,
+                "explanation": o.attack.explanation,
+                "intended_subject": o.attack.intended_subject,
+                "compiled_subject": o.extraction.subject,
+                "verdict": o.verdict,
+                "escaped": o.escaped,
+            }
+            for o in wrong
+        ],
+    }
+
+
 def run(extractor: Extractor) -> dict[str, Any]:
     outcomes = [run_attack(attack, extractor) for attack in ATTACKS]
     escaped = [o for o in outcomes if o.escaped]
@@ -251,7 +463,11 @@ def run(extractor: Extractor) -> dict[str, Any]:
         "escaped": len(escaped),
         "blessed": len(blessed),
         "attack_success_rate": round(len(escaped) / len(outcomes), 4),
+        "attack_success_ci": [round(v, 4) for v in wilson(len(escaped), len(outcomes))],
         "false_support_rate": round(len(blessed) / len(outcomes), 4),
+        "false_support_ci": [round(v, 4) for v in wilson(len(blessed), len(outcomes))],
+        "by_class": by_class(outcomes),
+        "compiler_boundary": compiler_boundary(outcomes),
         "paraphrase": run_paraphrases(extractor),
         "outcomes": [
             {
@@ -288,8 +504,21 @@ def render(report: dict[str, Any]) -> str:
         "| metric | value |",
         "|---|---|",
         f"| **attack success rate** (escaped refutation) | "
-        f"**{report['attack_success_rate']:.0%}** |",
-        f"| false support (blessed outright) | {report['false_support_rate']:.0%} |",
+        f"**{report['attack_success_rate']:.0%}** "
+        f"[{report['attack_success_ci'][0]:.0%}, {report['attack_success_ci'][1]:.0%}] |",
+        f"| false support (blessed outright) | {report['false_support_rate']:.0%} "
+        f"[{report['false_support_ci'][0]:.0%}, {report['false_support_ci'][1]:.0%}] |",
+        "",
+        "Rates carry 95% Wilson intervals. A rate without one is not a result.",
+        "",
+        "| class | attack | n | escaped | blessed |",
+        "|---|---|---|---|---|",
+    ]
+    for name, row in report["by_class"].items():
+        out.append(
+            f"| {name} | {row['name']} | {row['n']} | {row['escaped']} | {row['blessed']} |"
+        )
+    out += [
         "",
         "| id | attack | exploits | verdict | escaped |",
         "|---|---|---|---|---|",
@@ -299,6 +528,39 @@ def render(report: dict[str, Any]) -> str:
         out.append(
             f"| {o['id']} | {o['name']} | {o['exploits'][:46]} | `{o['verdict']}` | {mark} |"
         )
+    boundary = report["compiler_boundary"]
+    out += [
+        "",
+        "## Claim compilation as a security boundary",
+        "",
+        "An attacker has two routes to avoiding refutation: defeat the verifier, or cause",
+        "the compiler to build a claim the verifier was never asked about. The second is",
+        "cheaper and sits upstream of every guarantee the protocol offers.",
+        "",
+        "| | value |",
+        "|---|---|",
+        f"| claims mis-compiled | {boundary['extraction_wrong']}/"
+        f"{boundary['extraction_wrong'] + boundary['extraction_correct']} "
+        f"({boundary['extraction_error_rate']:.0%}) |",
+        f"| P(escape \| extraction correct) | {boundary['p_escape_given_extraction_correct']} |",
+        f"| P(escape \| extraction wrong) | {boundary['p_escape_given_extraction_wrong']} |",
+        f"| P(false support \| extraction correct) | "
+        f"{boundary['p_blessed_given_extraction_correct']} |",
+        f"| P(false support \| extraction wrong) | "
+        f"{boundary['p_blessed_given_extraction_wrong']} |",
+        "",
+    ]
+    if boundary["miscompiled"]:
+        out += ["Every mis-compiled claim:", ""]
+        for item in boundary["miscompiled"]:
+            out += [
+                f"- `{item['id']}` — *\"{item['explanation'][:70]}\"*  ",
+                f"  intended `{item['intended_subject']}`, compiled "
+                f"`{item['compiled_subject']}` → `{item['verdict']}`"
+                f"{' **(escaped)**' if item['escaped'] else ''}",
+            ]
+        out.append("")
+
     para = report["paraphrase"]
     out += [
         "",

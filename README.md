@@ -66,25 +66,38 @@ Full record and scope in [docs/real-model-audit.md](docs/real-model-audit.md).
 
 ## We tried to break it
 
-Eight explanations written in bad faith by something that knows how the protocol works, each
-aimed at a model version where the published formula makes CONTRADICTED the truthful answer
+24 explanations written in bad faith by something that knows how the protocol works — eight
+attack classes, three instances each, every one aimed at a model version where the published
+formula makes CONTRADICTED the truthful answer
 ([docs/adversarial-evaluation.md](docs/adversarial-evaluation.md)).
 
-| | offline extractor | Gemini 3.5 Flash |
+| | offline extractor | Gemini 3.5 Flash (live) |
 |---|---|---|
-| attack success rate | 50% | **25%** |
-| **false support** | **0%** | **0%** |
+| attack success rate | 58% [39%, 76%] | **21% [9%, 40%]** |
+| **false support** | **0% [0%, 14%]** | **0% [0%, 14%]** |
 
-**No attack has ever produced a false SUPPORTED** — the outcome with a victim. Six of eight
-are refuted outright, including hedged primacy, threshold hugging, and a driver that acts only
-through an interaction the single-variable protocol cannot isolate.
+> Across the evaluated benchmark, **no attack produced a false SUPPORTED verdict.** Two attack
+> classes successfully induced INCONCLUSIVE, demonstrating that untestability can be exploited
+> as an evasion mechanism without generating false causal support.
 
-**Two succeed, and we predicted which two before writing the benchmark.** INCONCLUSIVE is a
-safe harbour: an attacker who cannot win can still avoid losing, by aiming a claim at a noisy
-model (A4) or phrasing it below the testability gate (A7). That is a property of the design,
-not a bug in it — the system genuinely cannot tell "untestable" from "untestable on purpose" —
-and the escape grants the attacker nothing to point at. The write-up says so plainly, along
-with why the fix is governance rather than a fourth verdict.
+That is the precise claim, and it is not "Ariadne cannot be fooled" — 24 attacks cannot
+establish that. **0 of 24 is not 0%**: the 95% upper bound is 14%.
+
+**The finding we did not expect: claim compilation is a security boundary.** An attacker has
+two routes — defeat the verifier, or make the *compiler* build a claim the verifier is never
+asked about. Conditioning on which happened:
+
+| | offline | Gemini 3.5 |
+|---|---|---|
+| P(escape \| extraction correct) | 0.375 | 0.143 |
+| **P(escape \| extraction wrong)** | **1.000** | **0.667** |
+| P(false support \| either) | 0.0 | 0.0 |
+
+Every mis-compiled claim escaped, without exception. *"Urgency drove this, and signal_c
+mattered too"* compiles to a claim about `signal_c` — which on v1 is **true** — so the false
+statement about urgency is never tested. The verifier did not fail; it was never asked.
+Mis-compilation is an **evasion amplifier, not a false-support pathway**, and any system that
+turns language into a structured test inherits the same boundary.
 
 ## It is running
 
@@ -147,7 +160,7 @@ No Google Cloud account. No API key. No network.
 ```bash
 python -m venv .venv && .venv/Scripts/activate    # or source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                            # 1152 tests, hermetic (24 need Docker, skip cleanly)
+pytest                                            # 1189 tests, hermetic (24 need Docker, skip cleanly)
 python -m backend.scripts.run_demo                # the whole story, end to end
 python -m benchmark.run_benchmark                 # scored against deterministic ground truth
 ```
