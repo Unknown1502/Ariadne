@@ -64,6 +64,28 @@ to do.
 Reproduce: `python -m backend.scripts.probe_real_model --project <your-gcp-project>`.
 Full record and scope in [docs/real-model-audit.md](docs/real-model-audit.md).
 
+## We tried to break it
+
+Eight explanations written in bad faith by something that knows how the protocol works, each
+aimed at a model version where the published formula makes CONTRADICTED the truthful answer
+([docs/adversarial-evaluation.md](docs/adversarial-evaluation.md)).
+
+| | offline extractor | Gemini 3.5 Flash |
+|---|---|---|
+| attack success rate | 50% | **25%** |
+| **false support** | **0%** | **0%** |
+
+**No attack has ever produced a false SUPPORTED** — the outcome with a victim. Six of eight
+are refuted outright, including hedged primacy, threshold hugging, and a driver that acts only
+through an interaction the single-variable protocol cannot isolate.
+
+**Two succeed, and we predicted which two before writing the benchmark.** INCONCLUSIVE is a
+safe harbour: an attacker who cannot win can still avoid losing, by aiming a claim at a noisy
+model (A4) or phrasing it below the testability gate (A7). That is a property of the design,
+not a bug in it — the system genuinely cannot tell "untestable" from "untestable on purpose" —
+and the escape grants the attacker nothing to point at. The write-up says so plainly, along
+with why the fix is governance rather than a fourth verdict.
+
 ## It is running
 
 | | |
@@ -125,7 +147,7 @@ No Google Cloud account. No API key. No network.
 ```bash
 python -m venv .venv && .venv/Scripts/activate    # or source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                            # 1122 tests, hermetic (24 need Docker, skip cleanly)
+pytest                                            # 1152 tests, hermetic (24 need Docker, skip cleanly)
 python -m backend.scripts.run_demo                # the whole story, end to end
 python -m benchmark.run_benchmark                 # scored against deterministic ground truth
 ```
