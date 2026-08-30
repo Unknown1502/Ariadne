@@ -321,6 +321,7 @@ class TestApiIsNotTheSourceOfTruth:
             "/api/v1/connections",
             "/api/v1/feature-semantics",
             "/api/v1/explanation-sources",
+            "/api/v1/registered-models",
         )
         assert all(
             path.startswith("/api/v1/events/")
@@ -338,14 +339,17 @@ class TestApiIsNotTheSourceOfTruth:
         one of them ever gained a path to the verifier, the allowlist would be hiding the
         exact thing it was written to prevent.
         """
-        import backend.api.configuration_routes as module
+        import backend.api.configuration_routes as configuration
+        import backend.api.model_routes as models
+        import backend.integrations.readiness as readiness
 
-        source = pathlib.Path(module.__file__).read_text(encoding="utf-8")
-        for forbidden in ("from backend.verifier", "import verify", "generate_verdict"):
-            assert forbidden not in source, (
-                f"configuration routes reference {forbidden!r}; configuration must not be "
-                "able to produce or influence a verdict"
-            )
+        for module in (configuration, models, readiness):
+            source = pathlib.Path(module.__file__).read_text(encoding="utf-8")
+            for forbidden in ("from backend.verifier", "import verify", "generate_verdict"):
+                assert forbidden not in source, (
+                    f"{module.__name__} references {forbidden!r}; configuration and "
+                    "onboarding must not be able to produce or influence a verdict"
+                )
 
     def test_no_endpoint_accepts_a_verdict_value(self, client: TestClient) -> None:
         schema = client.get("/openapi.json").json()
