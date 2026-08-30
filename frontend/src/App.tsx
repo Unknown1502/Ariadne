@@ -26,7 +26,14 @@ import {
   InconclusiveExplainer,
 } from "./components/ClaimCompilation";
 import { Investigation } from "./components/Investigation";
-import { Nav, useHashRoute } from "./components/Nav";
+import { EvidenceTrace } from "./components/EvidenceTrace";
+import {
+  CommandPalette,
+  Rail,
+  Topbar,
+  useCommandShortcut,
+  useHashRoute,
+} from "./components/Shell";
 import { Debt, Fleet, Lineage, Runtime } from "./components/Panels";
 import {
   Connections,
@@ -35,7 +42,6 @@ import {
 } from "./components/Configuration";
 import {
   Infrastructure,
-  ModeBanner,
   NeedsAttention,
   ValidityTimeline,
   WhyVerdict,
@@ -64,6 +70,11 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [view, goTo] = useHashRoute();
+  const [collapsed, setCollapsed] = useState(
+    () => window.localStorage.getItem("ariadne.rail") === "collapsed",
+  );
+  const [commandOpen, setCommandOpen] = useState(false);
+  useCommandShortcut(() => setCommandOpen(true));
 
   /* One poll drives everything. The page has no state of its own to keep in sync -
      it is a view of the ledger, so re-reading is the only update mechanism it needs. */
@@ -181,52 +192,37 @@ export default function App() {
   );
 
   return (
-    <div className="app">
-      <div className="honesty">
-        <span>
-          <strong>Ariadne</strong> · Synthetic Triage Decision Laboratory · not a
-          clinical system
-        </span>
-        <span className="honesty__flags">
-          {system && (
-            <>
-              <span>
-                reasoning:{" "}
-                <strong>
-                  {system.reasoner.is_language_model
-                    ? system.reasoner.model
-                    : "offline deterministic reasoner"}
-                </strong>
-              </span>
-              <span>
-                verdicts: <strong>deterministic v{system.verifier_version}</strong>
-              </span>
-              <span>
-                runtime:{" "}
-                <strong>
-                  {system.cloud.enabled ? "google cloud" : "local"} · {system.cloud.event_bus}
-                </strong>
-              </span>
-            </>
-          )}
-        </span>
-      </div>
+    <div className={`shell${collapsed ? " shell--collapsed" : ""}`}>
+      <Rail
+        view={view}
+        onNavigate={goTo}
+        collapsed={collapsed}
+        counts={{ overview: attention.length, evidence: rows.length }}
+        system={system}
+      />
 
-      <header className="masthead">
-        <p className="masthead__eyebrow">Executable Explanation Protocol</p>
-        <h1>AI decision under investigation</h1>
-        <p className="masthead__sub">
-          A triage nurse is told a decision and given a reason. She is not an ML engineer,
-          and she has no way to check it. Ariadne turns that reason into an experiment, runs
-          it, and reports what happened — scoped to the model version and the data it was
-          true of.
-        </p>
-      </header>
+      <div className="main">
+        <Topbar
+          view={view}
+          collapsed={collapsed}
+          onCollapse={() => {
+            const next = !collapsed;
+            setCollapsed(next);
+            window.localStorage.setItem("ariadne.rail", next ? "collapsed" : "open");
+          }}
+          onOpenCommand={() => setCommandOpen(true)}
+          system={system}
+        />
 
-      <ModeBanner system={system} />
+        <CommandPalette
+          open={commandOpen}
+          onClose={() => setCommandOpen(false)}
+          onNavigate={goTo}
+          rows={rows}
+          onSelectInvestigation={setSelectedId}
+        />
 
-      <Nav view={view} onNavigate={goTo} attention={attention.length} />
-
+        <main className="page" key={view}>
       {view === "overview" && (
         <>
       <NeedsAttention items={attention} onSelect={(id) => { setSelectedId(id); goTo("evidence"); }} />
@@ -286,6 +282,7 @@ export default function App() {
           {/* Explanation vs compiled claim comes first: the verdict below is about the
               compiled claim, and the adversarial benchmark showed that a reader who cannot
               see the difference cannot tell whether the right question was tested. */}
+          <EvidenceTrace detail={detail} />
           <ClaimCompilation claim={detail.claim} />
           <Investigation detail={detail} />
           <WhyVerdict detail={detail} />
@@ -419,7 +416,7 @@ export default function App() {
         </>
       )}
 
-      <footer className="footnote">
+          <footer className="footnote">
         <p>
           <strong>Scope.</strong> Ariadne measures behavioral explanation faithfulness under
           a declared intervention protocol. It does not recover hidden causal structure, and
@@ -433,7 +430,9 @@ export default function App() {
           configurable operational risk score, not a universal quantity. High-impact actions
           require a human.
         </p>
-      </footer>
+          </footer>
+        </main>
+      </div>
     </div>
   );
 }

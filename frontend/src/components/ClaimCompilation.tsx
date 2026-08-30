@@ -37,7 +37,9 @@ export function ClaimCompilation({ claim }: { claim: Claim | null }) {
       <div className="compile__grid">
         <div className="compile__side">
           <p className="compile__label">Model&rsquo;s explanation</p>
-          <blockquote className="compile__quote">{claim.source_explanation}</blockquote>
+          <blockquote className="compile__quote evidence-quote--sm">
+            {claim.source_explanation}
+          </blockquote>
         </div>
 
         <div className="compile__arrow" aria-hidden="true">
