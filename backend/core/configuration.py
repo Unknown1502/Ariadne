@@ -38,6 +38,7 @@ CONNECTION_PREFIX = "CON"
 FEATURE_PREFIX = "FTR"
 EXPLANATION_SOURCE_PREFIX = "SRC"
 EXPLANATION_PREFIX = "EXPL"
+MODEL_PREFIX = "MDL"
 
 
 class ConnectionKind(StrEnum):
@@ -385,3 +386,89 @@ class ReceivedExplanation(AriadneModel):
     explanation: str = Field(min_length=1)
     received_at: datetime
     investigation_id: str | None = None
+
+
+# -- registered models -----------------------------------------------------------------
+
+
+class ModelStatus(StrEnum):
+    """Where a model is in onboarding.
+
+    Earned like connection status: nothing sets READY except the readiness check passing
+    every gate, and the check reads live state rather than a stored flag. A model whose
+    endpoint later fails stops being ready the next time anyone asks, which is the only
+    behaviour that makes the label worth anything.
+    """
+
+    CONFIGURING = "CONFIGURING"
+    """Registered, but something onboarding needs is still missing."""
+
+    READY = "READY"
+    """Every readiness gate passed at the moment it was last checked."""
+
+    DISABLED = "DISABLED"
+
+
+class OutputContract(AriadneModel):
+    """Where the prediction, score, and explanation sit in a model's response.
+
+    Ariadne cannot verify an explanation it cannot find. Different teams return different
+    shapes, so the shape is declared rather than assumed - and validated against a real
+    response before the model is called ready, because a path that is merely plausible is
+    a path that fails on the first live call.
+    """
+
+    score_path: str = Field(default="score", min_length=1)
+    """Dot path to the continuous score. Continuous because the protocol measures how far
+    a decision moved; a hard label collapses every delta to 0 or +/-1."""
+
+    decision_path: str = "decision"
+    explanation_path: str = "explanation"
+
+    validated_against: str = ""
+    """A response the paths were checked against, or empty. Its presence is the difference
+    between a declared contract and a verified one."""
+
+
+class RegisteredModel(AriadneModel):
+    """A model an organisation has connected Ariadne to."""
+
+    id: str
+    model_id: str = Field(min_length=1, max_length=120)
+    """The organisation's own identifier, used in events. Distinct from `id`, which is
+    Ariadne's."""
+
+    name: str = Field(min_length=1, max_length=160)
+    provider: str = ""
+    connection_id: str = ""
+    current_version: str = ""
+    distribution_version: str = ""
+    output: OutputContract = Field(default_factory=OutputContract)
+    status: ModelStatus = ModelStatus.CONFIGURING
+    created_at: datetime
+    updated_at: datetime
+
+
+class ReadinessCheck(AriadneModel):
+    """One gate between a registered model and a verifiable one."""
+
+    name: str
+    passed: bool
+    detail: str
+    blocker: str = ""
+    """What to do about it, in the imperative. A failing check that does not say how to
+    clear it is a dead end rather than a diagnosis."""
+
+
+class Readiness(AriadneModel):
+    """Whether a model can actually be verified, and if not, precisely what is missing."""
+
+    model_id: str
+    ready: bool
+    status: str
+    checks: list[ReadinessCheck]
+    checked_at: datetime
+
+    @property
+    def blockers(self) -> list[str]:
+        return [check.blocker for check in self.checks if not check.passed and check.blocker]

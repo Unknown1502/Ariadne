@@ -35,6 +35,7 @@ from backend.core.configuration import (
     ExplanationSource,
     FeatureSemantics,
     ReceivedExplanation,
+    RegisteredModel,
 )
 from backend.core.errors import StorageError
 from backend.core.schemas import ApprovalRequest, ExperimentRun, Investigation
@@ -50,6 +51,7 @@ CONNECTIONS = "ariadne_connections"
 FEATURES = "ariadne_features"
 EXPLANATION_SOURCES = "ariadne_explanation_sources"
 EXPLANATIONS = "ariadne_explanations"
+MODELS = "ariadne_models"
 
 
 class DocumentExists(Exception):
@@ -332,6 +334,22 @@ class FirestoreRuntimeStore:
         if model_id is not None:
             items = [e for e in items if e.model_id == model_id]
         return sorted(items, key=lambda e: e.received_at, reverse=True)
+
+    def save_model(self, model: RegisteredModel) -> None:
+        self._doc(MODELS, model.id).set(model.model_dump(mode="json"))
+
+    def get_model(self, model_id: str) -> RegisteredModel | None:
+        data = self._read(MODELS, model_id)
+        return RegisteredModel.model_validate(data) if data else None
+
+    def list_models(self) -> list[RegisteredModel]:
+        return sorted(
+            (RegisteredModel.model_validate(d) for d in self._stream(MODELS)),
+            key=lambda m: m.created_at,
+        )
+
+    def delete_model(self, model_id: str) -> bool:
+        return self._delete_doc(MODELS, model_id)
 
     def _delete_doc(self, collection: str, key: str) -> bool:
         reference = self._doc(collection, key)

@@ -147,6 +147,13 @@ from backend.api.configuration_routes import router as configuration_router  # n
 
 app.include_router(configuration_router)
 
+# Model lifecycle: registration, output contract, readiness. Separate from configuration
+# because it owns the model those resources are *for*, and the readiness gate that says
+# whether they add up to something verifiable.
+from backend.api.model_routes import router as model_router  # noqa: E402
+
+app.include_router(model_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],

@@ -34,6 +34,7 @@ from backend.core.configuration import (
     ExplanationSource,
     FeatureSemantics,
     ReceivedExplanation,
+    RegisteredModel,
 )
 from backend.core.errors import StorageError
 from backend.core.schemas import ApprovalRequest, ExperimentRun, Investigation
@@ -180,6 +181,11 @@ class RuntimeStateStore(Protocol):
     def save_explanation(self, explanation: ReceivedExplanation) -> None: ...
     def list_explanations(self, model_id: str | None = None) -> list[ReceivedExplanation]: ...
 
+    def save_model(self, model: RegisteredModel) -> None: ...
+    def get_model(self, model_id: str) -> RegisteredModel | None: ...
+    def list_models(self) -> list[RegisteredModel]: ...
+    def delete_model(self, model_id: str) -> bool: ...
+
 
 class LocalRuntimeStore:
     """Durable, inspectable runtime state backed by a directory of JSON documents."""
@@ -189,7 +195,7 @@ class LocalRuntimeStore:
         self._clock = clock or SystemClock()
         for section in (
             "idempotency", "investigations", "runs", "audits", "approvals",
-            "connections", "features", "explanation_sources", "explanations",
+            "connections", "features", "explanation_sources", "explanations", "models",
         ):
             (self.root / section).mkdir(parents=True, exist_ok=True)
 
@@ -419,6 +425,22 @@ class LocalRuntimeStore:
         if model_id is not None:
             items = [e for e in items if e.model_id == model_id]
         return sorted(items, key=lambda e: e.received_at, reverse=True)
+
+    def save_model(self, model: RegisteredModel) -> None:
+        self._write("models", model.id, model.model_dump(mode="json"))
+
+    def get_model(self, model_id: str) -> RegisteredModel | None:
+        data = self._read("models", model_id)
+        return RegisteredModel.model_validate(data) if data else None
+
+    def list_models(self) -> list[RegisteredModel]:
+        return sorted(
+            (RegisteredModel.model_validate(d) for d in self._all("models")),
+            key=lambda m: m.created_at,
+        )
+
+    def delete_model(self, model_id: str) -> bool:
+        return self._delete("models", model_id)
 
     def _all(self, section: str) -> list[dict[str, Any]]:
         directory = self.root / section
