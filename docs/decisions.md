@@ -256,6 +256,13 @@ can measure.
 
 Named rather than half-built, per the design pack's own "cut if late" list:
 
+- **`google-adk` was a declared dependency that nothing imported, and has been removed.**
+  It sat in `pyproject.toml` while `docs/decisions.md` said ADK was not integrated - the two
+  disagreed, and the dependency was the one lying. Left in place it would have looked like a
+  requirements checkbox with nothing behind it, which is the same defect species this project
+  spends its time hunting. The Google framework Ariadne genuinely uses is the **GenAI SDK**
+  (`google-genai`), imported by both `agents/llm.py` and `experiment_engine/gemini_target.py`
+  and exercised live against Vertex AI.
 - **Vertex AI Agent Engine / ADK orchestration.** The agent boundaries, typed handoffs,
   manifests, and permission checks are all implemented in-repo. Wiring ADK's runner would
   change how agents are *invoked*, not what they are allowed to do.
