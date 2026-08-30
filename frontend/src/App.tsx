@@ -23,6 +23,14 @@ import {
 } from "./api";
 import { Investigation } from "./components/Investigation";
 import { Debt, Fleet, Lineage, Runtime } from "./components/Panels";
+import {
+  Infrastructure,
+  ModeBanner,
+  NeedsAttention,
+  ValidityTimeline,
+  WhyVerdict,
+  attentionItems,
+} from "./components/Governance";
 
 const MODEL_VERSIONS = ["1.0.0", "2.0.0", "3.0.0", "4.0.0"];
 const POLL_MS = 1200;
@@ -198,6 +206,13 @@ export default function App() {
         </p>
       </header>
 
+      <ModeBanner system={system} />
+
+      <NeedsAttention
+        items={attentionItems(rows, approvals.length, lineage)}
+        onSelect={setSelectedId}
+      />
+
       <section className="card" style={{ marginBottom: 32 }}>
         <p className="card__label">Emit an event — then stop touching the console</p>
         <div className="controls">
@@ -245,7 +260,10 @@ export default function App() {
       </section>
 
       {detail ? (
-        <Investigation detail={detail} />
+        <>
+          <Investigation detail={detail} />
+          <WhyVerdict detail={detail} />
+        </>
       ) : (
         <div className="empty">
           No investigation yet. Deploy a model version above and watch one appear.
@@ -320,12 +338,17 @@ export default function App() {
       )}
 
       {lineage && lineage.entries.length > 0 && (
-        <Lineage view={lineage} onSelect={selectVersion} />
+        <>
+          <ValidityTimeline lineage={lineage} onSelect={selectVersion} />
+          <Lineage view={lineage} onSelect={selectVersion} />
+        </>
       )}
 
       {debt && (
         <Debt snapshot={debt.current} delta={debt.delta} history={debt.history} />
       )}
+
+      <Infrastructure system={system} runtimeOk={(proof?.worker?.events_seen ?? 0) > 0} />
 
       {fleet.length > 0 && <Fleet agents={fleet} />}
 

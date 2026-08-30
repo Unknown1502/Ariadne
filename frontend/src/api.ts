@@ -79,6 +79,10 @@ export interface ExperimentPlan {
   min_effect_threshold: number;
   reproducibility_threshold: number;
   validity_threshold: number;
+  // Both are sent by /api/v1/investigations/{id} and were simply missing from this type,
+  // so the console could not explain two of the four gates it renders verdicts for.
+  instability_threshold: number;
+  protocol_version: string;
   confounders: string[];
   invalid_conditions: string[];
 }

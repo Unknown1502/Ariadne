@@ -813,3 +813,230 @@ a:focus-visible {
     opacity: 1;
   }
 }
+
+/* ===================================================================== governance ===
+   The control-plane layer. Verdict colour is the only saturated colour in the system,
+   and INCONCLUSIVE deliberately reads as a considered answer rather than an error -
+   amber, same weight as the others, never red and never an alert icon.
+   ================================================================================== */
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* -- mode banner: what is actually wired ----------------------------------------- */
+.mode {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-bottom: 24px;
+  border: 1px solid var(--graticule);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  font-size: 12.5px;
+}
+.mode--live { border-left-color: var(--supported); }
+.mode--local { border-left-color: var(--muted); }
+.mode__tag {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  padding: 2px 8px;
+  border-radius: 2px;
+  background: var(--panel-raised);
+  color: var(--text);
+}
+.mode--live .mode__tag { color: var(--supported); }
+.mode__detail { color: var(--text-dim); }
+.mode__reasoner {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+}
+.mode__reasoner.ok { color: var(--supported); }
+.mode__reasoner.warn { color: var(--muted); }
+
+/* -- needs attention ------------------------------------------------------------- */
+.attention {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.attention__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--graticule);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.attention__item--contradicted { border-left-color: var(--contradicted); }
+.attention__item--inconclusive { border-left-color: var(--inconclusive); }
+.attention__item--approval { border-left-color: var(--inconclusive); }
+.attention__item--stale { border-left-color: var(--muted); }
+.attention__mark {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.4;
+  width: 16px;
+  flex: none;
+}
+.attention__item--contradicted .attention__mark { color: var(--contradicted); }
+.attention__item--inconclusive .attention__mark,
+.attention__item--approval .attention__mark { color: var(--inconclusive); }
+.attention__item--stale .attention__mark { color: var(--muted); }
+.attention__body { flex: 1; min-width: 0; }
+.attention__headline { margin: 0 0 3px; font-weight: 600; font-size: 13.5px; }
+.attention__detail { margin: 0; color: var(--text-dim); font-size: 12.5px; line-height: 1.5; }
+.attention__empty {
+  padding: 14px;
+  border: 1px dashed var(--graticule);
+  border-radius: var(--radius);
+  color: var(--muted);
+  font-size: 13px;
+}
+.btn--ghost {
+  flex: none;
+  background: transparent;
+  border-color: var(--graticule);
+  font-size: 11.5px;
+}
+
+/* -- why this verdict ------------------------------------------------------------ */
+.why {
+  margin: 20px 0 32px;
+  padding: 18px;
+  border: 1px solid var(--graticule);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.why__head { margin-bottom: 14px; }
+.why__title { margin: 0 0 4px; font-family: var(--font-display); font-size: 17px; }
+.why__meaning { margin: 0; color: var(--text-dim); font-size: 13px; }
+.why__table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.why__table th[scope="col"] {
+  text-align: left;
+  padding: 6px 10px 6px 0;
+  border-bottom: 1px solid var(--graticule);
+  color: var(--muted);
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.why__table th[scope="row"] {
+  text-align: left;
+  padding: 10px 14px 10px 0;
+  font-weight: 600;
+  vertical-align: top;
+  border-bottom: 1px solid var(--graticule-soft);
+}
+.why__table td {
+  padding: 10px 14px 10px 0;
+  vertical-align: top;
+  border-bottom: 1px solid var(--graticule-soft);
+}
+.why__reading {
+  display: block;
+  margin-top: 3px;
+  font-weight: 400;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.5;
+  max-width: 46ch;
+}
+.why__mark { white-space: nowrap; font-family: var(--font-mono); font-size: 11.5px; }
+.why__codes { margin: 14px 0 6px; font-size: 12px; color: var(--muted); }
+.chip--code {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  margin-right: 5px;
+}
+.why__scope {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--graticule-soft);
+  color: var(--text-dim);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+/* -- validity over time ---------------------------------------------------------- */
+.timeline {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.timeline__step { flex: 1 1 140px; }
+.timeline__btn {
+  width: 100%;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--graticule);
+  border-top-width: 3px;
+  border-radius: var(--radius);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+}
+.timeline__btn:hover { background: var(--panel-raised); }
+.timeline__btn:focus-visible { outline: 2px solid var(--supported); outline-offset: 2px; }
+.timeline__step--SUPPORTED .timeline__btn { border-top-color: var(--supported); }
+.timeline__step--CONTRADICTED .timeline__btn { border-top-color: var(--contradicted); }
+.timeline__step--INCONCLUSIVE .timeline__btn { border-top-color: var(--inconclusive); }
+.timeline__version { display: block; font-size: 12px; color: var(--muted); }
+.timeline__status { display: block; margin-top: 4px; font-size: 12.5px; font-weight: 600; }
+.timeline__step--SUPPORTED .timeline__status { color: var(--supported); }
+.timeline__step--CONTRADICTED .timeline__status { color: var(--contradicted); }
+.timeline__step--INCONCLUSIVE .timeline__status { color: var(--inconclusive); }
+.timeline__note { margin: 0; color: var(--text-dim); font-size: 12.5px; line-height: 1.6; }
+
+/* -- infrastructure -------------------------------------------------------------- */
+.infra { list-style: none; margin: 0 0 12px; padding: 0; }
+.infra__row {
+  display: grid;
+  grid-template-columns: 14px 110px 190px 1fr;
+  align-items: baseline;
+  gap: 10px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--graticule-soft);
+  font-size: 12.5px;
+}
+.infra__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--faint);
+  align-self: center;
+}
+.infra__dot.ok { background: var(--supported); }
+.infra__name { font-weight: 600; }
+.infra__status.ok { color: var(--supported); }
+.infra__purpose { color: var(--text-dim); font-size: 12px; line-height: 1.5; }
+.infra__note { margin: 0; color: var(--muted); font-size: 12px; }
+
+@media (max-width: 720px) {
+  .infra__row { grid-template-columns: 14px 1fr; }
+  .infra__status, .infra__purpose { grid-column: 2; }
+  .mode__reasoner { margin-left: 0; }
+}

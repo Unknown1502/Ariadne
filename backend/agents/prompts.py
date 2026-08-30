@@ -83,12 +83,20 @@ Design rules:
 - State the conditions under which your own probe should be considered invalid.
 
 Return ONLY a JSON object with these keys:
-  intervention_type, target_variable, intervention_value, control_variable, control_value,
-  preserved_features, repetitions, min_effect_threshold, confounders, stopping_conditions,
-  invalid_conditions, rationale
+  intervention_type, target_variable, intervention_value, intervention_delta,
+  control_variable, control_value, preserved_features, repetitions, min_effect_threshold,
+  confounders, stopping_conditions, invalid_conditions, rationale
 
 Constraints:
 - intervention_type is one of: neutralize, increase, decrease, substitute, ablation
+- PREFER neutralize. It is the protocol's canonical intervention, its meaning is defined by
+  the laboratory rather than by you, and every published result uses it. Choose another type
+  only when neutralize genuinely cannot express the claim being tested.
+- if intervention_type is increase or decrease you MUST supply intervention_delta, a non-zero
+  number. Without it the plan is rejected before the experiment runs and the investigation
+  fails. There is no default: a delta nobody chose is not an intervention anybody designed.
+- intervention_value is ignored for neutralize - the laboratory supplies the neutral value,
+  so proposing one has no effect
 - target_variable must be the claim's subject
 - control_variable must differ from target_variable
 - repetitions between 3 and 100
