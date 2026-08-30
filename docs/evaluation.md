@@ -122,9 +122,12 @@ INCONCLUSIVE to everything, and this is the number that catches it.
   measure of internal correctness, not of external validity.
 - The ablations vary one mechanism within Ariadne. They are not a comparison against any
   other published system, and no such comparison is claimed.
-- Claim compilation runs on the offline deterministic reasoner by default, so these numbers
-  do **not** measure Gemini's claim-extraction quality. Evaluating that needs a labelled set
-  of real explanations and is genuine future work.
+- Claim compilation runs on the offline deterministic reasoner, so these numbers do **not**
+  measure Gemini's claim-extraction quality. That is measured separately in
+  `docs/investigator-evaluation.md`, and the result matters for reading this table: the
+  matcher producing the claims scored here has a primacy F1 of **0.143**, and extraction
+  errors change the final verdict a third of the time. These accuracies are therefore the
+  verifier's, given claims from a weak extractor — not the pipeline's.
 - Debt figures are not comparable across policy versions, by construction.
 
 ## Test suite
@@ -139,7 +142,7 @@ tests/security/      injection payloads, privilege boundaries, ledger tampering
 tests/benchmark/     the benchmark itself, as a regression gate
 ```
 
-957 tests, 92% line coverage on `backend/`. Every test is hermetic: no network, no cloud
+1076 tests, 92% line coverage on `backend/`. Every test is hermetic: no network, no cloud
 account, no wall-clock dependency, no unseeded randomness. A failure means a regression, not a
 flake. The 24 skips are the Firestore and Pub/Sub emulator suites, which need Docker and skip
 cleanly without it.

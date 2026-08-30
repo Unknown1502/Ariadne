@@ -141,9 +141,11 @@ class GeminiClient:
         project: str = "",
         location: str = "asia-south1",
         max_output_tokens: int = 2048,
+        thinking_budget: int = 0,
     ) -> None:
         self.model_name = model
         self._max_output_tokens = max_output_tokens
+        self._thinking_budget = thinking_budget
         self._api_key = api_key
         self._use_vertex = use_vertex
         self._project = project
@@ -177,6 +179,12 @@ class GeminiClient:
             "max_output_tokens": min(request.max_output_tokens, self._max_output_tokens),
             "system_instruction": request.system,
             "response_mime_type": "application/json",
+            # Gemini 2.5 spends output tokens on internal reasoning before answering, and
+            # that spend comes out of max_output_tokens. A claim compiler emits a small
+            # structured object; left enabled, thinking consumed the entire budget and every
+            # live call failed with MAX_TOKENS before producing any JSON. The target-model
+            # adapter has always set this; the agent client had drifted without it.
+            "thinking_config": {"thinking_budget": self._thinking_budget},
         }
         if request.response_schema:
             config["response_schema"] = request.response_schema

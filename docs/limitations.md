@@ -182,11 +182,22 @@ runs it with `LLM_PROVIDER=gemini` and a Google API key.
 Memory Bank. The threat model documents in-repo equivalents and says plainly that no
 integration exists. Claiming one that is not wired would be worse than the gap.
 
-**Gemini's claim-extraction quality is unmeasured.** The benchmark runs on the offline
-deterministic reasoner, so it evaluates the verifier and the protocol, not the language
-model's semantic accuracy. Measuring that needs a labelled corpus of real explanations with
-human agreement on what each one claims — genuine future work, and the most valuable next
-step.
+**Gemini's claim-extraction quality was unmeasured. It has now been measured, once,
+against a small corpus.** `docs/investigator-evaluation.md` records it: 25 explanations,
+ground truth published per case, run through both the offline keyword matcher and live
+Gemini 2.5 Flash on the production prompt.
+
+The headline is that the language model is doing real work — primacy F1 0.963 against the
+matcher's 0.143 — and that extraction errors reach the verdict rather than being absorbed
+(P(verdict changed | extraction wrong) = 0.33 for the matcher).
+
+What that still does not establish: the corpus is 25 hand-written explanations over a
+synthetic feature space, annotated by the same person who wrote the extractor being
+criticised. Two consecutive live runs disagreed on one case, so the figures carry run-to-run
+variance from Gemini's own non-determinism. And it measures extraction against an annotator's
+reading, not against real explanations produced by a model under audit with independently
+known ground truth. A labelled corpus of real explanations with multi-annotator agreement
+remains the most valuable next step; it is now a smaller step than it was.
 
 **Single-tenant, single-region, no authentication.** The API has no authn/authz. It is a
 demonstration system.

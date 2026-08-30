@@ -166,6 +166,32 @@ class TestRequestConstruction:
         client.generate(LLMRequest(system="s", user="u", task="t", max_output_tokens=8192))
         assert fake.models.last_kwargs["config"]["max_output_tokens"] == 512
 
+    def test_thinking_is_disabled_so_the_budget_reaches_the_answer(self) -> None:
+        """Gemini 2.5 spends output tokens on internal reasoning before it answers.
+
+        Found by running the Investigator evaluation against live Vertex AI for the first
+        time: *every* call failed with MAX_TOKENS at a 2048-token ceiling, because thinking
+        consumed the budget before any JSON was produced. The agent path had never been
+        exercised live, so nothing caught it - `docs/limitations.md` says the agent-side
+        Gemini client is unverified, and this is what that gap was hiding.
+
+        The target-model adapter already sets `thinking_budget: 0` for exactly this reason
+        (`gemini_target.py`). The two clients had drifted: one had the fix, the other had
+        the same bug the fix was written for. A claim compiler emits a small structured
+        object and needs no reasoning tokens to do it.
+        """
+        client, fake = client_returning(FakeResponse())
+        client.generate(REQUEST)
+        assert fake.models.last_kwargs["config"]["thinking_config"] == {"thinking_budget": 0}
+
+    def test_a_thinking_budget_can_be_raised_when_a_task_needs_it(self) -> None:
+        """Disabled by default, not disabled by force - the ceiling stays configurable."""
+        client = GeminiClient(model="gemini-2.5-flash", api_key="k", thinking_budget=512)
+        fake = FakeGenAIClient(FakeResponse())
+        client._client = fake
+        client.generate(REQUEST)
+        assert fake.models.last_kwargs["config"]["thinking_config"] == {"thinking_budget": 512}
+
     def test_json_mode_is_requested(self) -> None:
         client, fake = client_returning(FakeResponse())
         client.generate(REQUEST)

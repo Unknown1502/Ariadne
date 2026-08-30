@@ -112,7 +112,7 @@ No Google Cloud account. No API key. No network.
 ```bash
 python -m venv .venv && .venv/Scripts/activate    # or source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                            # 957 tests, hermetic (24 need Docker, skip cleanly)
+pytest                                            # 1076 tests, hermetic (24 need Docker, skip cleanly)
 python -m backend.scripts.run_demo                # the whole story, end to end
 python -m benchmark.run_benchmark                 # scored against deterministic ground truth
 ```
@@ -148,7 +148,19 @@ flowchart LR
 
 **Gemini reasons. Deterministic code decides.** The Investigator reads a sentence and
 decides what testable prediction it makes — genuinely ambiguous semantic work that rules
-handle badly. The Experimenter designs the probe. Everything after that is arithmetic:
+handle badly. That used to be a design intuition; it is now measured
+([docs/investigator-evaluation.md](docs/investigator-evaluation.md)). On 25 explanations
+phrased the way people actually write, with ground truth published per case:
+
+| | keyword matcher | Gemini 2.5 Flash |
+|---|---|---|
+| primacy F1 | **0.143** | **0.963** |
+| consequential error rate | 48% | 12% |
+
+The matcher detects primacy in **zero of five** cases where it is asserted without one of its
+keywords, and zero of four paraphrases. And extraction errors are *not* absorbed:
+P(verdict changed \| extraction wrong) = **0.33**. The language model is load-bearing, and
+that is now a measurement rather than an assertion. The Experimenter designs the probe. Everything after that is arithmetic:
 the engine executes, the verifier computes the verdict from the measurements, and the
 Governor's action comes from a pure function of verdict, lineage, debt, and policy.
 
