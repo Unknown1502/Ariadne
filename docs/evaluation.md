@@ -142,7 +142,7 @@ tests/security/      injection payloads, privilege boundaries, ledger tampering
 tests/benchmark/     the benchmark itself, as a regression gate
 ```
 
-1076 tests, 92% line coverage on `backend/`. Every test is hermetic: no network, no cloud
+1105 tests, 92% line coverage on `backend/`. Every test is hermetic: no network, no cloud
 account, no wall-clock dependency, no unseeded randomness. A failure means a regression, not a
 flake. The 24 skips are the Firestore and Pub/Sub emulator suites, which need Docker and skip
 cleanly without it.

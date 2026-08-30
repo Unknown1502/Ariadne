@@ -30,6 +30,12 @@ from datetime import datetime
 from typing import Any
 
 from backend.core.clock import Clock, SystemClock
+from backend.core.configuration import (
+    Connection,
+    ExplanationSource,
+    FeatureSemantics,
+    ReceivedExplanation,
+)
 from backend.core.errors import StorageError
 from backend.core.schemas import ApprovalRequest, ExperimentRun, Investigation
 from backend.storage.runtime import IdempotencyRecord, ScheduledAudit
@@ -40,6 +46,10 @@ RUNS = "ariadne_runs"
 RUN_ITEMS = "items"
 AUDITS = "ariadne_audits"
 APPROVALS = "ariadne_approvals"
+CONNECTIONS = "ariadne_connections"
+FEATURES = "ariadne_features"
+EXPLANATION_SOURCES = "ariadne_explanation_sources"
+EXPLANATIONS = "ariadne_explanations"
 
 
 class DocumentExists(Exception):
@@ -259,6 +269,76 @@ class FirestoreRuntimeStore:
         )
 
     # -- helpers -----------------------------------------------------------------------
+
+    # -- operator configuration --------------------------------------------------------
+    #
+    # Deliberately plain document CRUD. These are mutable configuration records, so none of
+    # the idempotency-claim machinery above applies - the atomic-create dance exists to stop
+    # two workers doing the same science twice, and editing a neutral value is neither.
+
+    def save_connection(self, connection: Connection) -> None:
+        self._doc(CONNECTIONS, connection.id).set(connection.model_dump(mode="json"))
+
+    def get_connection(self, connection_id: str) -> Connection | None:
+        data = self._read(CONNECTIONS, connection_id)
+        return Connection.model_validate(data) if data else None
+
+    def list_connections(self) -> list[Connection]:
+        return sorted(
+            (Connection.model_validate(d) for d in self._stream(CONNECTIONS)),
+            key=lambda c: c.created_at,
+        )
+
+    def delete_connection(self, connection_id: str) -> bool:
+        return self._delete_doc(CONNECTIONS, connection_id)
+
+    def save_feature(self, feature: FeatureSemantics) -> None:
+        self._doc(FEATURES, feature.id).set(feature.model_dump(mode="json"))
+
+    def get_feature(self, feature_id: str) -> FeatureSemantics | None:
+        data = self._read(FEATURES, feature_id)
+        return FeatureSemantics.model_validate(data) if data else None
+
+    def list_features(self, model_id: str | None = None) -> list[FeatureSemantics]:
+        features = [FeatureSemantics.model_validate(d) for d in self._stream(FEATURES)]
+        if model_id is not None:
+            features = [f for f in features if f.model_id == model_id]
+        return sorted(features, key=lambda f: f.name)
+
+    def delete_feature(self, feature_id: str) -> bool:
+        return self._delete_doc(FEATURES, feature_id)
+
+    def save_explanation_source(self, source: ExplanationSource) -> None:
+        self._doc(EXPLANATION_SOURCES, source.id).set(source.model_dump(mode="json"))
+
+    def get_explanation_source(self, source_id: str) -> ExplanationSource | None:
+        data = self._read(EXPLANATION_SOURCES, source_id)
+        return ExplanationSource.model_validate(data) if data else None
+
+    def list_explanation_sources(self) -> list[ExplanationSource]:
+        return sorted(
+            (ExplanationSource.model_validate(d) for d in self._stream(EXPLANATION_SOURCES)),
+            key=lambda s: s.created_at,
+        )
+
+    def delete_explanation_source(self, source_id: str) -> bool:
+        return self._delete_doc(EXPLANATION_SOURCES, source_id)
+
+    def save_explanation(self, explanation: ReceivedExplanation) -> None:
+        self._doc(EXPLANATIONS, explanation.id).set(explanation.model_dump(mode="json"))
+
+    def list_explanations(self, model_id: str | None = None) -> list[ReceivedExplanation]:
+        items = [ReceivedExplanation.model_validate(d) for d in self._stream(EXPLANATIONS)]
+        if model_id is not None:
+            items = [e for e in items if e.model_id == model_id]
+        return sorted(items, key=lambda e: e.received_at, reverse=True)
+
+    def _delete_doc(self, collection: str, key: str) -> bool:
+        reference = self._doc(collection, key)
+        if not reference.get().exists:
+            return False
+        reference.delete()
+        return True
 
     def _doc(self, collection: str, key: str) -> Any:
         return self._client.collection(collection).document(key)

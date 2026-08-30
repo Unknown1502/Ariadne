@@ -29,6 +29,12 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 from backend.core.clock import Clock, SystemClock
+from backend.core.configuration import (
+    Connection,
+    ExplanationSource,
+    FeatureSemantics,
+    ReceivedExplanation,
+)
 from backend.core.errors import StorageError
 from backend.core.schemas import ApprovalRequest, ExperimentRun, Investigation
 
@@ -151,6 +157,29 @@ class RuntimeStateStore(Protocol):
     def all_audits(self) -> list[ScheduledAudit]: ...
     def stats(self) -> dict[str, int]: ...
 
+    # -- operator configuration --------------------------------------------------------
+    # Connections, feature semantics and explanation sources are what an organisation must
+    # supply before Ariadne can verify anything about *their* model. They are mutable by
+    # nature - endpoints move, neutral values get revised - so they belong here rather than
+    # in the append-only ledger, which exists precisely because evidence must not change.
+    def save_connection(self, connection: Connection) -> None: ...
+    def get_connection(self, connection_id: str) -> Connection | None: ...
+    def list_connections(self) -> list[Connection]: ...
+    def delete_connection(self, connection_id: str) -> bool: ...
+
+    def save_feature(self, feature: FeatureSemantics) -> None: ...
+    def get_feature(self, feature_id: str) -> FeatureSemantics | None: ...
+    def list_features(self, model_id: str | None = None) -> list[FeatureSemantics]: ...
+    def delete_feature(self, feature_id: str) -> bool: ...
+
+    def save_explanation_source(self, source: ExplanationSource) -> None: ...
+    def get_explanation_source(self, source_id: str) -> ExplanationSource | None: ...
+    def list_explanation_sources(self) -> list[ExplanationSource]: ...
+    def delete_explanation_source(self, source_id: str) -> bool: ...
+
+    def save_explanation(self, explanation: ReceivedExplanation) -> None: ...
+    def list_explanations(self, model_id: str | None = None) -> list[ReceivedExplanation]: ...
+
 
 class LocalRuntimeStore:
     """Durable, inspectable runtime state backed by a directory of JSON documents."""
@@ -158,7 +187,10 @@ class LocalRuntimeStore:
     def __init__(self, root: Path, clock: Clock | None = None) -> None:
         self.root = Path(root)
         self._clock = clock or SystemClock()
-        for section in ("idempotency", "investigations", "runs", "audits", "approvals"):
+        for section in (
+            "idempotency", "investigations", "runs", "audits", "approvals",
+            "connections", "features", "explanation_sources", "explanations",
+        ):
             (self.root / section).mkdir(parents=True, exist_ok=True)
 
     # -- idempotency -------------------------------------------------------------------
@@ -328,6 +360,82 @@ class LocalRuntimeStore:
         return [request for request in requests if request.status == "PENDING"]
 
     # -- helpers -----------------------------------------------------------------------
+
+    # -- operator configuration --------------------------------------------------------
+
+    def save_connection(self, connection: Connection) -> None:
+        self._write("connections", connection.id, connection.model_dump(mode="json"))
+
+    def get_connection(self, connection_id: str) -> Connection | None:
+        data = self._read("connections", connection_id)
+        return Connection.model_validate(data) if data else None
+
+    def list_connections(self) -> list[Connection]:
+        return sorted(
+            (Connection.model_validate(d) for d in self._all("connections")),
+            key=lambda c: c.created_at,
+        )
+
+    def delete_connection(self, connection_id: str) -> bool:
+        return self._delete("connections", connection_id)
+
+    def save_feature(self, feature: FeatureSemantics) -> None:
+        self._write("features", feature.id, feature.model_dump(mode="json"))
+
+    def get_feature(self, feature_id: str) -> FeatureSemantics | None:
+        data = self._read("features", feature_id)
+        return FeatureSemantics.model_validate(data) if data else None
+
+    def list_features(self, model_id: str | None = None) -> list[FeatureSemantics]:
+        features = [FeatureSemantics.model_validate(d) for d in self._all("features")]
+        if model_id is not None:
+            features = [f for f in features if f.model_id == model_id]
+        return sorted(features, key=lambda f: f.name)
+
+    def delete_feature(self, feature_id: str) -> bool:
+        return self._delete("features", feature_id)
+
+    def save_explanation_source(self, source: ExplanationSource) -> None:
+        self._write("explanation_sources", source.id, source.model_dump(mode="json"))
+
+    def get_explanation_source(self, source_id: str) -> ExplanationSource | None:
+        data = self._read("explanation_sources", source_id)
+        return ExplanationSource.model_validate(data) if data else None
+
+    def list_explanation_sources(self) -> list[ExplanationSource]:
+        return sorted(
+            (ExplanationSource.model_validate(d) for d in self._all("explanation_sources")),
+            key=lambda s: s.created_at,
+        )
+
+    def delete_explanation_source(self, source_id: str) -> bool:
+        return self._delete("explanation_sources", source_id)
+
+    def save_explanation(self, explanation: ReceivedExplanation) -> None:
+        self._write("explanations", explanation.id, explanation.model_dump(mode="json"))
+
+    def list_explanations(self, model_id: str | None = None) -> list[ReceivedExplanation]:
+        items = [ReceivedExplanation.model_validate(d) for d in self._all("explanations")]
+        if model_id is not None:
+            items = [e for e in items if e.model_id == model_id]
+        return sorted(items, key=lambda e: e.received_at, reverse=True)
+
+    def _all(self, section: str) -> list[dict[str, Any]]:
+        directory = self.root / section
+        if not directory.exists():
+            return []
+        documents: list[dict[str, Any]] = []
+        for path in sorted(directory.glob("*.json")):
+            with path.open(encoding="utf-8") as stream:
+                documents.append(json.load(stream))
+        return documents
+
+    def _delete(self, section: str, key: str) -> bool:
+        path = self._path(section, key)
+        if not path.exists():
+            return False
+        path.unlink()
+        return True
 
     def _path(self, section: str, key: str) -> Path:
         return self.root / section / f"{_safe(key)}.json"

@@ -135,6 +135,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Operator configuration: connections, feature semantics, explanation sources. Registered
+# rather than inlined because it is a genuinely separate concern - configuring what Ariadne
+# points at, versus reading what Ariadne concluded.
+from backend.api.configuration_routes import router as configuration_router  # noqa: E402
+
+app.include_router(configuration_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],

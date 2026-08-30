@@ -12,6 +12,8 @@ until the audit finished, the demo's "nobody clicked Analyze" claim would be the
 
 from __future__ import annotations
 
+import pathlib
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -304,11 +306,46 @@ class TestApiIsNotTheSourceOfTruth:
             for path, methods in paths.items()
             if "post" in methods or "put" in methods or "patch" in methods
         ]
-        # Only event emission and the human approval gate may write.
+        # Three families of write, and the boundary is what each one may touch.
+        #
+        #   /events/       publishes an event. Starts work; decides nothing.
+        #   /approvals/    the human gate. Records a decision about an action, never a verdict.
+        #   configuration  connections, feature semantics, explanation sources - what Ariadne
+        #                  points at. None of them can reach the verifier, and
+        #                  TestConfigurationNeverProducesScience asserts their responses
+        #                  cannot even contain a verdict word.
+        #
+        # Nothing may write a verdict. That remains the property under test; the list below
+        # widened because the product gained configuration, not because the rule softened.
+        configuration_prefixes = (
+            "/api/v1/connections",
+            "/api/v1/feature-semantics",
+            "/api/v1/explanation-sources",
+        )
         assert all(
-            path.startswith("/api/v1/events/") or "/approvals/" in path
+            path.startswith("/api/v1/events/")
+            or "/approvals/" in path
+            or path.startswith(configuration_prefixes)
             for path in writable
         ), writable
+
+    def test_no_configuration_endpoint_can_reach_the_verifier(
+        self, client: TestClient
+    ) -> None:
+        """The widened allowlist above is only safe while this holds.
+
+        Configuration routes are permitted to write because they write *configuration*. If
+        one of them ever gained a path to the verifier, the allowlist would be hiding the
+        exact thing it was written to prevent.
+        """
+        import backend.api.configuration_routes as module
+
+        source = pathlib.Path(module.__file__).read_text(encoding="utf-8")
+        for forbidden in ("from backend.verifier", "import verify", "generate_verdict"):
+            assert forbidden not in source, (
+                f"configuration routes reference {forbidden!r}; configuration must not be "
+                "able to produce or influence a verdict"
+            )
 
     def test_no_endpoint_accepts_a_verdict_value(self, client: TestClient) -> None:
         schema = client.get("/openapi.json").json()
