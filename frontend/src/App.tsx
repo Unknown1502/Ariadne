@@ -21,6 +21,10 @@ import {
   type RuntimeProof,
   type SystemInfo,
 } from "./api";
+import {
+  ClaimCompilation,
+  InconclusiveExplainer,
+} from "./components/ClaimCompilation";
 import { Investigation } from "./components/Investigation";
 import { Nav, useHashRoute } from "./components/Nav";
 import { Debt, Fleet, Lineage, Runtime } from "./components/Panels";
@@ -279,8 +283,13 @@ export default function App() {
         <>
       {detail ? (
         <>
+          {/* Explanation vs compiled claim comes first: the verdict below is about the
+              compiled claim, and the adversarial benchmark showed that a reader who cannot
+              see the difference cannot tell whether the right question was tested. */}
+          <ClaimCompilation claim={detail.claim} />
           <Investigation detail={detail} />
           <WhyVerdict detail={detail} />
+          <InconclusiveExplainer detail={detail} />
         </>
       ) : (
         <div className="empty">

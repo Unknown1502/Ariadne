@@ -1245,3 +1245,134 @@ a:focus-visible {
   background: var(--contradicted);
   color: var(--ink);
 }
+
+/* ============================================== claim compilation + inconclusive ===
+   Both screens exist because of a research finding, and both are styled to be read
+   rather than admired. INCONCLUSIVE is amber and calm - never red, never an alert
+   icon - because it is a scientific result and the product's most-defended one.
+   ================================================================================ */
+
+.compile {
+  margin: 20px 0 24px;
+  padding: 18px;
+  border: 1px solid var(--graticule);
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.compile__head { margin-bottom: 14px; }
+.compile__title { margin: 0 0 4px; font-family: var(--font-display); font-size: 16px; }
+.compile__note { margin: 0; color: var(--text-dim); font-size: 12.5px; line-height: 1.55; }
+.compile__grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 16px;
+  align-items: start;
+}
+.compile__label {
+  margin: 0 0 7px;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.compile__quote {
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 2px solid var(--thread);
+  background: var(--panel-raised);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--text);
+}
+.compile__arrow {
+  align-self: center;
+  color: var(--muted);
+  font-size: 20px;
+  padding-top: 18px;
+}
+.compile__fields { margin: 0; display: flex; flex-direction: column; gap: 7px; }
+.compile__fields > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  background: var(--panel-raised);
+  border-radius: 2px;
+}
+.compile__fields dt { color: var(--muted); font-size: 12px; }
+.compile__fields dd { margin: 0; font-size: 12.5px; }
+.compile__ambiguity {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--inconclusive);
+  border-radius: var(--radius);
+  background: var(--inconclusive-wash);
+}
+.compile__ambiguity-head {
+  margin: 0 0 6px;
+  font-weight: 600;
+  font-size: 12.5px;
+  color: var(--inconclusive);
+}
+.compile__ambiguity ul { margin: 0 0 8px; padding-left: 18px; font-size: 12.5px; line-height: 1.6; }
+.compile__ambiguity-why { margin: 0; font-size: 11.5px; color: var(--text-dim); line-height: 1.55; }
+
+/* -- INCONCLUSIVE, explained ------------------------------------------------------ */
+.inconc {
+  margin: 20px 0 28px;
+  padding: 18px;
+  border: 1px solid var(--inconclusive);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--panel);
+}
+.inconc__head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.inconc__badge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  padding: 4px 10px;
+  border-radius: 2px;
+  background: var(--inconclusive-wash);
+  color: var(--inconclusive);
+}
+.inconc__lead { margin: 0; flex: 1; min-width: 240px; font-size: 13px; color: var(--text); }
+.inconc__block { margin-bottom: 16px; }
+.inconc__block:last-child { margin-bottom: 0; }
+.inconc__label {
+  margin: 0 0 6px;
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.inconc__text { margin: 0; font-size: 12.5px; line-height: 1.65; color: var(--text-dim); }
+.inconc__reasons { list-style: none; margin: 0; padding: 0; }
+.inconc__reasons li {
+  display: grid;
+  grid-template-columns: 210px 1fr;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--graticule-soft);
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+.inconc__reasons li:last-child { border-bottom: none; }
+.inconc__elevated { color: var(--inconclusive); font-weight: 600; }
+.inconc__caveat {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: var(--panel-raised);
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--text-dim);
+}
+
+@media (max-width: 860px) {
+  .compile__grid { grid-template-columns: 1fr; }
+  .compile__arrow { transform: rotate(90deg); padding: 4px 0; justify-self: start; }
+  .inconc__reasons li { grid-template-columns: 1fr; gap: 3px; }
+}

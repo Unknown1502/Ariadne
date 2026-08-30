@@ -26,7 +26,22 @@ import os
 from enum import StrEnum
 from typing import Annotated
 
-from fastapi import Depends, Header, HTTPException
+from fastapi import Depends, HTTPException
+from fastapi.security import APIKeyHeader
+
+API_KEY_HEADER = APIKeyHeader(
+    name="X-API-Key",
+    auto_error=False,
+    description=(
+        "Role-bearing API key. Required when the deployment is in ENFORCED mode; ignored "
+        "in OPEN mode. Check GET /api/v1/system -> authorization to see which is live. "
+        "Roles: MODEL_ADMIN (configure), REVIEWER (decide approvals), OPERATOR (emit "
+        "events), READ_ONLY. Every role may read; no role may write a verdict."
+    ),
+)
+"""Declared through FastAPI's security machinery rather than as a bare Header so it appears
+in the OpenAPI document. Auth that is enforced but undocumented is auth an integrator
+discovers by receiving a 401."""
 
 
 class Role(StrEnum):
@@ -122,7 +137,7 @@ def auth_mode() -> str:
 
 
 def current_principal(
-    x_api_key: Annotated[str | None, Header(alias="X-API-Key")] = None,
+    x_api_key: Annotated[str | None, Depends(API_KEY_HEADER)] = None,
 ) -> Principal:
     """Resolve the caller, refusing an unknown key when enforcement is on."""
     keys = _configured_keys()
