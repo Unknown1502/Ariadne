@@ -138,6 +138,11 @@ app = FastAPI(
 # Operator configuration: connections, feature semantics, explanation sources. Registered
 # rather than inlined because it is a genuinely separate concern - configuring what Ariadne
 # points at, versus reading what Ariadne concluded.
+from backend.api.authz import (  # noqa: E402
+    CanDecide,
+    CanEmit,
+    auth_mode,
+)
 from backend.api.configuration_routes import router as configuration_router  # noqa: E402
 
 app.include_router(configuration_router)
@@ -187,6 +192,10 @@ def system() -> dict[str, Any]:
             "project": settings.gcp_project_id or None,
             "region": settings.gcp_region,
         },
+        # Published so "is this deployment protected?" is answerable by a reviewer who
+        # cannot see the configuration. A system that quietly ran open while looking
+        # protected would invite trust it has not earned.
+        "authorization": auth_mode(),
         "policy_version": "1.0.0",
         "verifier_version": "1.0.0",
         "protocol_version": "1.0.0",
@@ -421,7 +430,7 @@ class ApprovalDecision(BaseModel):
 
 
 @app.post("/api/v1/approvals/{approval_id}/decide")
-def decide_approval(approval_id: str, body: ApprovalDecision) -> dict[str, Any]:
+def decide_approval(approval_id: str, body: ApprovalDecision, _: CanDecide) -> dict[str, Any]:
     """Record a human decision on a high-impact action."""
     current = app_state()
     request = current.runtime.get_approval(approval_id)
@@ -466,7 +475,7 @@ class ModelDeployBody(BaseModel):
 
 
 @app.post("/api/v1/events/model-version-deployed")
-async def publish_model_deployed(body: ModelDeployBody) -> dict[str, Any]:
+async def publish_model_deployed(body: ModelDeployBody, _: CanEmit) -> dict[str, Any]:
     """Emit the event that wakes Ariadne up.
 
     Returns as soon as the event is queued. No verdict is computed here - the worker picks
@@ -508,7 +517,9 @@ class DistributionChangeBody(BaseModel):
 
 
 @app.post("/api/v1/events/distribution-changed")
-async def publish_distribution_changed(body: DistributionChangeBody) -> dict[str, Any]:
+async def publish_distribution_changed(
+    body: DistributionChangeBody, _: CanEmit
+) -> dict[str, Any]:
     current = app_state()
     event = emit_distribution_changed(
         model_id=body.model_id,
@@ -536,7 +547,7 @@ class ExplanationBody(BaseModel):
 
 
 @app.post("/api/v1/events/explanation-received")
-async def publish_explanation(body: ExplanationBody) -> dict[str, Any]:
+async def publish_explanation(body: ExplanationBody, _: CanEmit) -> dict[str, Any]:
     current = app_state()
     event = emit_explanation_received(
         model_id=body.model_id,

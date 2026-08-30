@@ -22,6 +22,7 @@ import {
   type SystemInfo,
 } from "./api";
 import { Investigation } from "./components/Investigation";
+import { Nav, useHashRoute } from "./components/Nav";
 import { Debt, Fleet, Lineage, Runtime } from "./components/Panels";
 import {
   Connections,
@@ -58,6 +59,7 @@ export default function App() {
   const [distribution, setDistribution] = useState("baseline_2024.1");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [view, goTo] = useHashRoute();
 
   /* One poll drives everything. The page has no state of its own to keep in sync -
      it is a view of the ledger, so re-reading is the only update mechanism it needs. */
@@ -120,6 +122,12 @@ export default function App() {
     [rows],
   );
   const activeId = selectedId ?? attentionRanked[0]?.id ?? null;
+
+  // Computed once: the nav badges it, the Overview renders it.
+  const attention = useMemo(
+    () => attentionItems(rows, approvals.length, lineage),
+    [rows, approvals.length, lineage],
+  );
 
   useEffect(() => {
     if (!activeId) {
@@ -213,10 +221,11 @@ export default function App() {
 
       <ModeBanner system={system} />
 
-      <NeedsAttention
-        items={attentionItems(rows, approvals.length, lineage)}
-        onSelect={setSelectedId}
-      />
+      <Nav view={view} onNavigate={goTo} attention={attention.length} />
+
+      {view === "overview" && (
+        <>
+      <NeedsAttention items={attention} onSelect={(id) => { setSelectedId(id); goTo("evidence"); }} />
 
       <section className="card" style={{ marginBottom: 32 }}>
         <p className="card__label">Emit an event — then stop touching the console</p>
@@ -263,7 +272,11 @@ export default function App() {
         </p>
         {error && <p className="plot__caption bad">{error}</p>}
       </section>
+        </>
+      )}
 
+      {view === "evidence" && (
+        <>
       {detail ? (
         <>
           <Investigation detail={detail} />
@@ -341,39 +354,60 @@ export default function App() {
           </table>
         </section>
       )}
-
-      {lineage && lineage.entries.length > 0 && (
-        <>
-          <ValidityTimeline lineage={lineage} onSelect={selectVersion} />
-          <Lineage view={lineage} onSelect={selectVersion} />
         </>
       )}
 
-      {debt && (
-        <Debt snapshot={debt.current} delta={debt.delta} history={debt.history} />
+      {view === "lineage" && (
+        <>
+          {lineage && lineage.entries.length > 0 ? (
+            <>
+              <ValidityTimeline
+                lineage={lineage}
+                onSelect={(version) => {
+                  selectVersion(version);
+                  goTo("evidence");
+                }}
+              />
+              <Lineage view={lineage} onSelect={selectVersion} />
+            </>
+          ) : (
+            <div className="empty">
+              No claim has been tested yet, so there is no history to show. Emit a
+              deployment event from the Overview.
+            </div>
+          )}
+          {debt && (
+            <Debt snapshot={debt.current} delta={debt.delta} history={debt.history} />
+          )}
+        </>
       )}
 
-      <Infrastructure system={system} runtimeOk={(proof?.worker?.events_seen ?? 0) > 0} />
+      {view === "configure" && (
+        <>
+          <Connections />
+          <FeatureSemanticsPanel />
+          <ExplanationSources onIngested={() => void refresh()} />
+        </>
+      )}
 
-      {/* Configuration: what a governance team connects and declares before Ariadne can
-          verify anything about their model. Placed after the evidence rather than before it
-          because a first-time reader should see what the product concludes before being
-          shown the forms that feed it. */}
-      <Connections />
-      <FeatureSemanticsPanel />
-      <ExplanationSources onIngested={() => void refresh()} />
-
-      {fleet.length > 0 && <Fleet agents={fleet} />}
-
-      {proof && (
-        <Runtime
-          proof={proof}
-          approvals={approvals}
-          versions={versions}
-          onDecide={(id, approve) =>
-            emit(() => api.decideApproval(id, approve, "nurse-supervisor"))
-          }
-        />
+      {view === "infrastructure" && (
+        <>
+          <Infrastructure
+            system={system}
+            runtimeOk={(proof?.worker?.events_seen ?? 0) > 0}
+          />
+          {fleet.length > 0 && <Fleet agents={fleet} />}
+          {proof && (
+            <Runtime
+              proof={proof}
+              approvals={approvals}
+              versions={versions}
+              onDecide={(id, approve) =>
+                emit(() => api.decideApproval(id, approve, "nurse-supervisor"))
+              }
+            />
+          )}
+        </>
       )}
 
       <footer className="footnote">

@@ -125,7 +125,7 @@ No Google Cloud account. No API key. No network.
 ```bash
 python -m venv .venv && .venv/Scripts/activate    # or source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                            # 1105 tests, hermetic (24 need Docker, skip cleanly)
+pytest                                            # 1122 tests, hermetic (24 need Docker, skip cleanly)
 python -m backend.scripts.run_demo                # the whole story, end to end
 python -m benchmark.run_benchmark                 # scored against deterministic ground truth
 ```

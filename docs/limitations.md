@@ -199,8 +199,22 @@ reading, not against real explanations produced by a model under audit with inde
 known ground truth. A labelled corpus of real explanations with multi-annotator agreement
 remains the most valuable next step; it is now a smaller step than it was.
 
-**Single-tenant, single-region, no authentication.** The API has no authn/authz. It is a
-demonstration system.
+**Single-tenant, single-region. Authorization exists; authentication is thin.** The API
+enforces role-based authorization in the backend - `MODEL_ADMIN`, `REVIEWER`, `OPERATOR`,
+`READ_ONLY` - and refuses on the server rather than by hiding buttons. Every allow test in
+`tests/security/test_authorization.py` has a matching deny test, because a boundary is only
+established by being turned away from it.
+
+What that is **not** is an identity system. Callers are identified by a shared API key
+supplied through `ARIADNE_API_KEYS`, which means no per-user identity, no rotation workflow,
+no SSO, no session management, and no way to tell two people holding the same key apart. The
+audit trail records the key's declared name, which is as good as whoever configured it.
+
+There is also a genuinely open mode: with no keys configured the API grants everything, which
+is right for `pytest` and for a local demo and would be wrong in production. It is not
+hidden - `/api/v1/system` publishes `authorization: OPEN` or `ENFORCED`, so "is this
+deployment protected?" is answerable by a reviewer who cannot read the configuration. **The
+live demo deployment currently runs OPEN**, deliberately, so that anyone can exercise it.
 
 **The local event bus is in-process.** It provides real at-least-once delivery, retries, and
 dead-lettering, but a process restart loses queued events. The Pub/Sub adapter does not have

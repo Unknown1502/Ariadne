@@ -32,6 +32,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from backend.api.authz import CanConfigure, CanEmit, CanRead
 from backend.core.configuration import (
     CONNECTION_PREFIX,
     EXPLANATION_PREFIX,
@@ -152,7 +153,7 @@ def _state() -> Any:
 
 
 @router.get("/connections")
-def list_connections() -> dict[str, Any]:
+def list_connections(_: CanRead) -> dict[str, Any]:
     connections = _state().runtime.list_connections()
     return {
         "connections": [c.model_dump(mode="json") for c in connections],
@@ -162,7 +163,7 @@ def list_connections() -> dict[str, Any]:
 
 
 @router.post("/connections", status_code=201)
-def create_connection(body: ConnectionBody) -> dict[str, Any]:
+def create_connection(body: ConnectionBody, _: CanConfigure) -> dict[str, Any]:
     """Create a connection. It is NOT_CONFIGURED until a probe says otherwise."""
     moment = _now()
     try:
@@ -179,7 +180,7 @@ def create_connection(body: ConnectionBody) -> dict[str, Any]:
 
 
 @router.get("/connections/{connection_id}")
-def get_connection(connection_id: str) -> dict[str, Any]:
+def get_connection(connection_id: str, _: CanRead) -> dict[str, Any]:
     connection = _state().runtime.get_connection(connection_id)
     if connection is None:
         raise HTTPException(status_code=404, detail=f"no connection {connection_id}")
@@ -187,7 +188,9 @@ def get_connection(connection_id: str) -> dict[str, Any]:
 
 
 @router.patch("/connections/{connection_id}")
-def update_connection(connection_id: str, body: ConnectionPatch) -> dict[str, Any]:
+def update_connection(
+    connection_id: str, body: ConnectionPatch, _: CanConfigure
+) -> dict[str, Any]:
     """Editing configuration invalidates the previous probe result.
 
     Changing an endpoint and keeping the green tick from the *old* endpoint is exactly the
@@ -221,13 +224,13 @@ def update_connection(connection_id: str, body: ConnectionPatch) -> dict[str, An
 
 
 @router.delete("/connections/{connection_id}", status_code=204)
-def delete_connection(connection_id: str) -> None:
+def delete_connection(connection_id: str, _: CanConfigure) -> None:
     if not _state().runtime.delete_connection(connection_id):
         raise HTTPException(status_code=404, detail=f"no connection {connection_id}")
 
 
 @router.post("/connections/{connection_id}/test")
-def test_connection(connection_id: str) -> dict[str, Any]:
+def test_connection(connection_id: str, _: CanConfigure) -> dict[str, Any]:
     """Really talk to the other side, and record what was observed."""
     runtime = _state().runtime
     connection = runtime.get_connection(connection_id)
@@ -240,12 +243,12 @@ def test_connection(connection_id: str) -> dict[str, Any]:
 
 
 @router.post("/connections/{connection_id}/enable")
-def enable_connection(connection_id: str) -> dict[str, Any]:
+def enable_connection(connection_id: str, _: CanConfigure) -> dict[str, Any]:
     return _set_enabled(connection_id, True)
 
 
 @router.post("/connections/{connection_id}/disable")
-def disable_connection(connection_id: str) -> dict[str, Any]:
+def disable_connection(connection_id: str, _: CanConfigure) -> dict[str, Any]:
     return _set_enabled(connection_id, False)
 
 
@@ -271,7 +274,9 @@ def _set_enabled(connection_id: str, enabled: bool) -> dict[str, Any]:
 
 
 @router.get("/feature-semantics")
-def list_features(model_id: str | None = Query(default=None)) -> dict[str, Any]:
+def list_features(
+    _: CanRead, model_id: str | None = Query(default=None)
+) -> dict[str, Any]:
     features = _state().runtime.list_features(model_id)
     return {
         "features": [f.model_dump(mode="json") for f in features],
@@ -281,7 +286,7 @@ def list_features(model_id: str | None = Query(default=None)) -> dict[str, Any]:
 
 
 @router.post("/feature-semantics", status_code=201)
-def create_feature(body: FeatureBody) -> dict[str, Any]:
+def create_feature(body: FeatureBody, _: CanConfigure) -> dict[str, Any]:
     """Create a feature definition and validate it immediately.
 
     Validation runs on write rather than on use, because the alternative is discovering that
@@ -307,7 +312,7 @@ def create_feature(body: FeatureBody) -> dict[str, Any]:
 
 
 @router.get("/feature-semantics/{feature_id}")
-def get_feature(feature_id: str) -> dict[str, Any]:
+def get_feature(feature_id: str, _: CanRead) -> dict[str, Any]:
     feature = _state().runtime.get_feature(feature_id)
     if feature is None:
         raise HTTPException(status_code=404, detail=f"no feature {feature_id}")
@@ -319,7 +324,9 @@ def get_feature(feature_id: str) -> dict[str, Any]:
 
 
 @router.patch("/feature-semantics/{feature_id}")
-def update_feature(feature_id: str, body: FeatureBody) -> dict[str, Any]:
+def update_feature(
+    feature_id: str, body: FeatureBody, _: CanConfigure
+) -> dict[str, Any]:
     """Revising a neutral value is a scientific act, so it takes a new version."""
     runtime = _state().runtime
     feature = runtime.get_feature(feature_id)
@@ -344,13 +351,13 @@ def update_feature(feature_id: str, body: FeatureBody) -> dict[str, Any]:
 
 
 @router.delete("/feature-semantics/{feature_id}", status_code=204)
-def delete_feature(feature_id: str) -> None:
+def delete_feature(feature_id: str, _: CanConfigure) -> None:
     if not _state().runtime.delete_feature(feature_id):
         raise HTTPException(status_code=404, detail=f"no feature {feature_id}")
 
 
 @router.post("/feature-semantics/{feature_id}/validate")
-def revalidate_feature(feature_id: str) -> dict[str, Any]:
+def revalidate_feature(feature_id: str, _: CanConfigure) -> dict[str, Any]:
     """Re-run validation and report every problem, not just the first."""
     runtime = _state().runtime
     feature = runtime.get_feature(feature_id)
@@ -380,7 +387,7 @@ def revalidate_feature(feature_id: str) -> dict[str, Any]:
 
 
 @router.get("/explanation-sources")
-def list_sources() -> dict[str, Any]:
+def list_sources(_: CanRead) -> dict[str, Any]:
     sources = _state().runtime.list_explanation_sources()
     return {
         "sources": [s.model_dump(mode="json") for s in sources],
@@ -389,7 +396,7 @@ def list_sources() -> dict[str, Any]:
 
 
 @router.post("/explanation-sources", status_code=201)
-def create_source(body: ExplanationSourceBody) -> dict[str, Any]:
+def create_source(body: ExplanationSourceBody, _: CanConfigure) -> dict[str, Any]:
     moment = _now()
     try:
         source = ExplanationSource(
@@ -405,7 +412,7 @@ def create_source(body: ExplanationSourceBody) -> dict[str, Any]:
 
 
 @router.get("/explanation-sources/{source_id}")
-def get_source(source_id: str) -> dict[str, Any]:
+def get_source(source_id: str, _: CanRead) -> dict[str, Any]:
     source = _state().runtime.get_explanation_source(source_id)
     if source is None:
         raise HTTPException(status_code=404, detail=f"no explanation source {source_id}")
@@ -413,13 +420,15 @@ def get_source(source_id: str) -> dict[str, Any]:
 
 
 @router.delete("/explanation-sources/{source_id}", status_code=204)
-def delete_source(source_id: str) -> None:
+def delete_source(source_id: str, _: CanConfigure) -> None:
     if not _state().runtime.delete_explanation_source(source_id):
         raise HTTPException(status_code=404, detail=f"no explanation source {source_id}")
 
 
 @router.post("/explanation-sources/{source_id}/ingest", status_code=202)
-async def ingest_explanation(source_id: str, body: IngestBody) -> dict[str, Any]:
+async def ingest_explanation(
+    source_id: str, body: IngestBody, _: CanEmit
+) -> dict[str, Any]:
     """The real ingestion path: an explanation arrives and the claim lifecycle begins.
 
     Stored verbatim before anything interprets it. The claim compiled from an explanation is
@@ -481,7 +490,9 @@ async def ingest_explanation(source_id: str, body: IngestBody) -> dict[str, Any]
 
 
 @router.get("/explanations")
-def list_explanations(model_id: str | None = Query(default=None)) -> dict[str, Any]:
+def list_explanations(
+    _: CanRead, model_id: str | None = Query(default=None)
+) -> dict[str, Any]:
     items = _state().runtime.list_explanations(model_id)
     return {
         "explanations": [e.model_dump(mode="json") for e in items],
