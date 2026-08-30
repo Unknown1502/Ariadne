@@ -112,7 +112,7 @@ No Google Cloud account. No API key. No network.
 ```bash
 python -m venv .venv && .venv/Scripts/activate    # or source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                            # 939 tests, hermetic (24 need Docker, skip cleanly)
+pytest                                            # 945 tests, hermetic (24 need Docker, skip cleanly)
 python -m backend.scripts.run_demo                # the whole story, end to end
 python -m benchmark.run_benchmark                 # scored against deterministic ground truth
 ```
@@ -153,10 +153,18 @@ the engine executes, the verifier computes the verdict from the measurements, an
 Governor's action comes from a pure function of verdict, lineage, debt, and policy.
 
 The Verifier has no LLM at all. Its manifest forbids one — `AgentManifest` raises if a
-Verifier is declared with `uses_llm=True` — and a test reads the module's source to confirm
-it imports nothing that could reach a model. That is the single property everything else
-rests on: a published verdict can be recomputed from stored evidence by anyone, and it will
-come out the same.
+Verifier is declared with `uses_llm=True` — and the isolation is proved *operationally*: a
+test imports the verifier in a **fresh interpreter subprocess** and asserts on what actually
+loaded, both that no model-calling module appears and that nothing outside a declared
+allowlist does.
+
+That test used to read the module's source and grep for forbidden strings. It passed on a
+technicality — it searched for lowercase `"gemini"` in a file whose docstring says
+`"Gemini"` — and it could never have caught the realistic breach, which is not
+`import google.genai` in the verifier but an innocent-looking import of something that does.
+Both versions were checked by deliberately importing an LLM helper into the verifier: the
+grep missed it, the subprocess check named it. That is the single property everything else
+rests on, so it is worth proving rather than asserting.
 
 ### Four roles, four different authorities
 
@@ -206,12 +214,26 @@ produces **3 false contradictions out of 14 cases**.
 The benchmark runs the same code with one mechanism removed at a time, against ground truth
 derived from the published model formulas:
 
-| Configuration | Accuracy | False support | False contradiction |
-|---|---|---|---|
-| **full** | **100%** (14/14) | 0 | 0 |
-| no control arm | 93% | 1 | 0 |
-| no validity gate | 79% | 0 | 3 |
-| trust the model's own explanation | 29% | 10 | 0 |
+| Configuration | Accuracy | 95% CI | False support | False contradiction |
+|---|---|---|---|---|
+| **full** | **100%** (14/14) | [78.5%, 100%] | 0 | 0 |
+| no control arm | 93% (13/14) | [68.5%, 98.7%] | 1 | 0 |
+| no validity gate | 79% (11/14) | [52.4%, 92.4%] | 0 | 3 |
+| *assume-faithful (floor reference)* | 29% (4/14) | [11.7%, 54.6%] | 10 | 0 |
+
+**Read those intervals before reading the accuracies.** At n=14 they are wide, and full vs
+no-control differ by a single case — McNemar on one discordant pair gives p=1.0, so **this
+benchmark cannot distinguish those two configurations.** It shows the validity gate doing
+real work and it shows nothing conclusive about the control arm. Saying so is the point;
+n=14 is a laboratory, not an evaluation, and the fix is more cases rather than more
+confident wording.
+
+**`assume-faithful` is not a baseline.** It is the constant `SUPPORTED` — not a model, not a
+simulation of one. Of the 12 cases that reach a verdict, 10 are not SUPPORTED, so it is wrong
+on 10/12 = 83% *by construction*. A benchmark with a different verdict mix would move that
+number without changing anything about explanations or about Ariadne. It bounds the bottom of
+the scale — nothing may score below "always say yes" — and it is quoted here for no other
+purpose.
 
 Reliability scenarios are scored too: duplicate delivery, worker crash mid-experiment,
 malformed agent output, dead target model. All four pass.

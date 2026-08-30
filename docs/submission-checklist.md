@@ -85,7 +85,12 @@ The items most worth failing on:
 - [x] `INCONCLUSIVE` is reported, never hidden, and never folded into faithfulness
 - [x] Unintegrated services (ADK, Model Armor, Agent Gateway, Memory Bank) are named as
       unintegrated rather than implied
-- [x] The benchmark's `self-report` baseline is labelled as a fixed rule, not a language model
+- [x] The benchmark's floor reference is named `assume-faithful`, is stated to be the
+      constant SUPPORTED, and its rate is printed beside the verdict mix that determines it —
+      it is never quoted as the cost of trusting a model
+- [x] Every ablation accuracy is reported with a 95% Wilson interval, and the doc states
+      plainly that full vs no-control is **not** statistically distinguishable at n=14
+- [x] SUPPORTED requires the bootstrap interval to exclude zero, not just a head-count
 - [x] Limitations are stated in the same detail as capabilities
 - [x] Deviations from the design pack are documented with reasoning — `docs/decisions.md`
 

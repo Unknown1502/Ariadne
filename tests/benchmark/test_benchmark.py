@@ -91,10 +91,32 @@ class TestAblationsEarnTheirPlace:
         assert report["metrics"]["no-validity"]["false_contradiction"] >= 1
         assert report["metrics"]["full"]["false_contradiction"] == 0
 
-    def test_trusting_the_model_is_much_worse(self, report) -> None:
-        self_report = report["metrics"]["self-report"]
-        assert self_report["false_support_rate"] > 0.5
-        assert self_report["verdict_accuracy"] < 0.5
+    def test_the_floor_reference_matches_the_benchmark_mix_it_restates(self, report) -> None:
+        """`assume-faithful` is the constant SUPPORTED, so this is an arithmetic identity.
+
+        It is asserted as one deliberately. The number used to be quoted as evidence that
+        trusting a model is costly, which it is not: it is a restatement of how many cases
+        this benchmark declares non-SUPPORTED. Pinning it to that computation keeps the two
+        from drifting apart, so the report can never present it as a measurement again.
+        """
+        from benchmark.cases import CASES
+
+        reach_verdict = [c for c in CASES if c.expected is not None]
+        not_supported = sum(1 for c in reach_verdict if str(c.expected) != "SUPPORTED")
+
+        floor = report["metrics"]["assume-faithful"]
+        assert floor["false_support"] == not_supported, (
+            "the floor reference should be wrong on exactly the non-SUPPORTED cases"
+        )
+        assert floor["false_support_rate"] == pytest.approx(
+            not_supported / len(reach_verdict), abs=0.01
+        )
+
+    def test_every_configuration_beats_the_floor(self, report) -> None:
+        """The only legitimate use of the floor: nothing may score below "always say yes"."""
+        floor = report["metrics"]["assume-faithful"]["verdict_accuracy"]
+        for name in ("full", "no-control", "no-validity"):
+            assert report["metrics"][name]["verdict_accuracy"] > floor
 
 
 class TestReliabilityScenarios:
@@ -150,4 +172,38 @@ class TestReportHonesty:
         markdown = render_markdown(report)
         assert "# Ariadne Benchmark Report" in markdown
         assert "## Limitations" in markdown
-        assert "self-report" in markdown
+        assert "assume-faithful" in markdown
+
+
+class TestTheDocumentedSpreadIsReal:
+    """`docs/evaluation.md` publishes the benchmark's verdict mix. It had drifted.
+
+    The doc claimed 3 SUPPORTED / 4 CONTRADICTED / 5 INCONCLUSIVE / 2 NO_VERDICT while the
+    suite actually held 2 / 4 / 6 / 2. Harmless on its own — except that this exact
+    distribution is what determines the `assume-faithful` row, so a stale copy of it would
+    make the report's own explanation of that number wrong.
+    """
+
+    def test_evaluation_md_states_the_actual_distribution(self) -> None:
+        import pathlib
+        import re
+
+        from benchmark.cases import CASES
+
+        actual: dict[str, int] = {}
+        for case in CASES:
+            key = "NO_VERDICT" if case.expected is None else str(case.expected)
+            actual[key] = actual.get(key, 0) + 1
+
+        doc = (
+            pathlib.Path(__file__).resolve().parents[2] / "docs" / "evaluation.md"
+        ).read_text(encoding="utf-8")
+        stated = re.search(r"Expected verdict spread: \*\*(.+?)\.\*\*", doc)
+        assert stated, "docs/evaluation.md should publish the expected verdict spread"
+
+        for count, verdict in re.findall(r"(\d+) ([A-Z_]+)", stated.group(1)):
+            assert actual.get(verdict) == int(count), (
+                f"docs/evaluation.md says {count} {verdict}; the suite has "
+                f"{actual.get(verdict, 0)}"
+            )
+        assert sum(actual.values()) == len(CASES)

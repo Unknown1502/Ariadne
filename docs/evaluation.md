@@ -23,18 +23,39 @@ v4.0.0   score = 0.1*urgency_marker + 0.7*signal_c + 0.15*urgency_marker*signal_
 Every case records *why* its expected verdict is correct in terms a reader can check by
 hand. If a rationale does not survive scrutiny, the case is wrong — not the system.
 
-Expected verdict spread: 3 SUPPORTED, 4 CONTRADICTED, 5 INCONCLUSIVE, 2 NO_VERDICT. A test
-asserts no single answer exceeds 60% of the suite, because an all-CONTRADICTED benchmark
+Expected verdict spread: **2 SUPPORTED, 4 CONTRADICTED, 6 INCONCLUSIVE, 2 NO_VERDICT.** A
+test asserts no single answer exceeds 60% of the suite, because an all-CONTRADICTED benchmark
 would make an always-contradict system look perfect.
+
+This distribution is not decoration. It fully determines the `assume-faithful` row below, and
+the report prints it beside that row for exactly that reason.
 
 ## Results
 
-| Configuration | Accuracy | False support | False contradiction | Inconclusive calibration |
-|---|---|---|---|---|
-| **full** | **100%** (14/14) | 0 (0%) | 0 (0%) | 100% |
-| no control arm | 93% (13/14) | 1 (8%) | 0 (0%) | 100% |
-| no validity gate | 79% (11/14) | 0 (0%) | 3 (25%) | 50% |
-| trust the model's explanation | 29% (4/14) | 10 (83%) | 0 (0%) | 0% |
+| Configuration | Accuracy | 95% CI (Wilson) | False support | False contradiction | Inconclusive calibration |
+|---|---|---|---|---|---|
+| **full** | **100%** (14/14) | [78.5%, 100%] | 0 (0%) | 0 (0%) | 100% |
+| no control arm | 93% (13/14) | [68.5%, 98.7%] | 1 (8%) | 0 (0%) | 100% |
+| no validity gate | 79% (11/14) | [52.4%, 92.4%] | 0 (0%) | 3 (25%) | 50% |
+| *assume-faithful (floor)* | 29% (4/14) | [11.7%, 54.6%] | 10 (83%) | 0 (0%) | 0% |
+
+### What n=14 can and cannot support
+
+The intervals matter more than the point estimates, and they are wide.
+
+- **full vs no-control is not a distinguishable difference.** They differ by one case.
+  McNemar on a single discordant pair gives **p = 1.0** — the largest value the test can
+  return. The control arm may well earn its place; *this benchmark cannot show that it does.*
+  The mechanism argument in "Why ablations" below is a design argument, not evidence.
+- **full vs no-validity is the comparison that survives.** Three false contradictions
+  against zero, and the failure mode is interpretable: every one is a distribution-shift case
+  where the probe cannot move the input enough to test anything.
+- **Any accuracy at n=14 carries a ±22pp interval.** Reporting "100%" without that interval
+  would overstate what fourteen hand-written cases can establish.
+
+n=14 is a laboratory, not an evaluation. Its job is to make the verifier's own correctness
+checkable by hand; drawing population conclusions from it would be a category error, and the
+remedy is more cases rather than more confident phrasing.
 
 Reliability scenarios, scored pass/fail on behaviour: duplicate delivery, worker crash
 mid-experiment, malformed agent output, dead target model. All pass.
@@ -60,9 +81,24 @@ verdict tracks *what was claimed*, not just what was measured.
 are distribution-shift cases where the probe cannot move the input enough to test anything —
 exactly the situation where a naive system manufactures a refutation.
 
-**Is any of this better than believing the model?** `self-report` reads the target model's own
-explanation and concludes SUPPORTED because that is what it asserts. 83% false-support rate.
-It is a fixed rule, not a language model, and the report says so.
+**Is any of this better than "always say yes"?** `assume-faithful` is the constant
+`SUPPORTED`. It does not read the explanation, it is not a language model, and it is not a
+simulation of one.
+
+Its 83% false-support rate is **an arithmetic identity, not a measurement**: of the 12 cases
+that reach a verdict, 10 are declared non-SUPPORTED by the benchmark, and 10/12 = 83%.
+Writing a benchmark with a different verdict mix would move that number without changing
+anything about explanations or about Ariadne. Quoting it as "trusting a model costs you 83%"
+would be circular, and it is not quoted that way anywhere in this repository — a test
+(`test_the_floor_reference_matches_the_benchmark_mix_it_restates`) pins it to the computation
+so the two cannot drift apart.
+
+What it is legitimately for: a floor. Any configuration that cannot beat "always say yes" is
+not doing useful work. It bounds the bottom of the scale and says nothing about the top.
+
+**The honest statement of what is still missing:** measuring what trusting a *real* model
+costs requires real explanations from real models with known ground truth. That experiment is
+not in this benchmark, and no number here is a substitute for it.
 
 ## Metrics
 
@@ -103,7 +139,7 @@ tests/security/      injection payloads, privilege boundaries, ledger tampering
 tests/benchmark/     the benchmark itself, as a regression gate
 ```
 
-939 tests, 92% line coverage on `backend/`. Every test is hermetic: no network, no cloud
+945 tests, 92% line coverage on `backend/`. Every test is hermetic: no network, no cloud
 account, no wall-clock dependency, no unseeded randomness. A failure means a regression, not a
 flake. The 24 skips are the Firestore and Pub/Sub emulator suites, which need Docker and skip
 cleanly without it.

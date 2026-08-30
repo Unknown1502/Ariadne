@@ -12,17 +12,27 @@ workflow". Rather than build strawmen and score them, the comparison here is a s
     full            everything on
     no-control      the control arm is not run
     no-validity     the intervention-validity gate is removed
-    self-report     the verdict is taken from the model's own explanation
+    assume-faithful a floor reference that accepts every explanation unconditionally
 
 Each answers a question a reviewer should ask: does the control earn its place, does the
 validity gate prevent anything real, and is any of this better than believing the model?
 Ablations are honest in a way a hand-written baseline is not, because every configuration
 runs identical code against identical fixtures - the only variable is the mechanism.
 
-`self-report` is worth naming precisely: it reads the explanation the target model ships and
-concludes SUPPORTED, because that is what the explanation asserts. It is not a simulated
-language model and no claim is made about how any real model would behave. It measures one
-specific thing: what you get if you trust a system's self-description.
+`assume-faithful` needs naming very precisely, because it is the configuration most likely
+to be misread. It is the constant `SUPPORTED`. It does not read the explanation, it is not a
+simulated language model, and it makes no claim about how any real model behaves.
+
+Its error rate is therefore **a property of this benchmark's verdict mix, not a measurement**:
+if 11 of 14 cases are not SUPPORTED, a constant-SUPPORTED rule is wrong on 11 of 14, and
+writing a benchmark with a different mix would move that number without changing anything
+about explanations or about Ariadne. Quoting it as "trusting the model gives an N% error
+rate" would be circular, so the report prints the mix beside it and calls it a floor
+reference rather than a baseline.
+
+What it is legitimately for: a sanity floor. Any configuration that cannot beat "always say
+yes" is not doing useful work. It bounds the bottom of the scale; it does not measure the
+top.
 """
 
 from __future__ import annotations
@@ -59,7 +69,7 @@ from backend.verifier.verifier import verify
 from benchmark.cases import CASES, BenchmarkCase, expected_distribution
 from tests.factories import T0, make_claim, make_plan
 
-CONFIGURATIONS = ("full", "no-control", "no-validity", "self-report")
+CONFIGURATIONS = ("full", "no-control", "no-validity", "assume-faithful")
 
 
 @dataclass
@@ -173,8 +183,9 @@ def run_case(case: BenchmarkCase, configuration: str) -> CaseResult:
             latency_ms=(time.perf_counter() - started) * 1000.0,
         )
 
-    if configuration == "self-report":
-        # Trust the model's own explanation. It asserts urgency is primary, so: SUPPORTED.
+    if configuration == "assume-faithful":
+        # The constant SUPPORTED. Not a model, not a simulation of one - a floor reference
+        # whose error rate is fixed by the benchmark's verdict mix. See the module docstring.
         observed = VerdictStatus.SUPPORTED
         outcome = None
         reasons = ["SELF_REPORTED"]
@@ -455,7 +466,9 @@ def build_report() -> dict[str, Any]:
             "verifier against a laboratory, not against the world.",
             "The ablations vary one mechanism at a time within Ariadne. They do not "
             "compare Ariadne against any other published system.",
-            "`self-report` is a fixed rule that trusts the model's own explanation. It is "
+            "`assume-faithful` is the constant SUPPORTED, so its error rate is determined "
+            "by this benchmark's verdict mix rather than measured. It is a floor reference, "
+            "not a baseline, and must not be quoted as the cost of trusting a model. It is "
             "not a language model, and it makes no claim about how one would behave.",
             "Explanation Debt weights are a policy choice; debt figures are not comparable "
             "across policy versions.",
@@ -495,6 +508,31 @@ def render_markdown(report: dict[str, Any]) -> str:
     add(
         "`full` is Ariadne. The others remove exactly one mechanism, so each column "
         "answers whether that mechanism earns its place.\n"
+    )
+    # The mix is printed with the table, always. `assume-faithful` is the constant
+    # SUPPORTED, so its error rate restates this distribution rather than measuring
+    # anything - and a number that can be misread as a measurement should never appear
+    # without the thing that determines it sitting beside it.
+    mix: dict[str, int] = {}
+    for case in CASES:
+        mix[("NO_VERDICT" if case.expected is None else str(case.expected))] = (
+            mix.get("NO_VERDICT" if case.expected is None else str(case.expected), 0) + 1
+        )
+    # Cases expecting NO_VERDICT never reach the verdict step at all - they are stopped
+    # upstream by quarantine - so no configuration decides them and they are excluded here.
+    reach_verdict = [c for c in CASES if c.expected is not None]
+    wrong_by_construction = sum(1 for c in reach_verdict if str(c.expected) != "SUPPORTED")
+    add(
+        f"Ground-truth mix of the {len(CASES)} cases: "
+        + ", ".join(f"{n} {verdict}" for verdict, n in sorted(mix.items()))
+        + f". Of the {len(reach_verdict)} that reach a verdict, {wrong_by_construction} "
+        f"are not SUPPORTED, so a constant-SUPPORTED rule is wrong on "
+        f"{wrong_by_construction}/{len(reach_verdict)} = "
+        f"{wrong_by_construction / len(reach_verdict):.0%} of them **by construction**. "
+        "That is what `assume-faithful` reports below. Writing a benchmark with a "
+        "different mix would move that number without changing anything about "
+        "explanations or about Ariadne, which is why it is a floor reference and not a "
+        "measurement of what trusting a model costs."
     )
     add(
         "| Configuration | Accuracy | False support | False contradiction | "

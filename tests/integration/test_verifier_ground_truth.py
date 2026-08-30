@@ -11,6 +11,9 @@ only in the direction it should.
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -23,6 +26,8 @@ from backend.experiment_engine.runner import ExperimentRunner
 from backend.experiment_engine.target_model import UnstableTriageModel
 from backend.verifier.verifier import ReasonCode, generate_verdict, verify
 from tests.factories import make_case, make_claim, make_plan
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 T0 = datetime(2026, 1, 1, tzinfo=UTC)
 
@@ -291,13 +296,75 @@ class TestVerdictRecord:
         second = generate_verdict(runner.run(plan, claim).evidence, claim, plan, created_at=T0)
         assert first.id == second.id
 
-    def test_the_verifier_imports_no_language_model(self) -> None:
-        # Structural guarantee, not a promise in a docstring: the module that decides
-        # verdicts must not be able to call a model even by accident.
-        import backend.verifier.verifier as module
+    @staticmethod
+    def _modules_loaded_by_importing_the_verifier() -> list[str]:
+        """Import the verifier in a clean interpreter and report what it loaded.
 
-        source = (module.__file__ or "")
-        assert source
-        text = Path(source).read_text(encoding="utf-8")
-        for forbidden in ("genai", "gemini", "openai", "llm_client", "LLMClient"):
-            assert forbidden not in text, f"verifier references {forbidden}"
+        A subprocess, deliberately. The obvious in-process version - snapshot
+        ``sys.modules``, import, diff - is broken in a way that is easy to miss and was
+        caught here only by breaking the boundary on purpose and watching the test still
+        pass: by the time this file runs, the test session has already imported most of
+        ``backend``, so anything the verifier pulls in is *already present* and never
+        appears in the diff. The check reports a clean boundary no matter what the
+        verifier imports.
+
+        That is the same defect as the string grep this replaced: a test shaped like a
+        proof that cannot fail. A fresh interpreter is the only way to observe what
+        importing this one module actually costs.
+        """
+        code = (
+            "import json, sys;"
+            "import backend.verifier.verifier;"
+            "print(json.dumps(sorted(sys.modules)))"
+        )
+        proc = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True, text=True, cwd=REPO_ROOT, timeout=120,
+        )
+        assert proc.returncode == 0, f"verifier import failed: {proc.stderr[-2000:]}"
+        return json.loads(proc.stdout)
+
+    def test_the_verifier_imports_no_language_model(self) -> None:
+        """Prove the isolation operationally, not by searching for words.
+
+        This test used to read the verifier's source and assert the strings "genai",
+        "gemini", "openai", "llm_client" did not appear. It passed - on a technicality.
+        The module docstring says "Gemini proposes what to test", capital G, and the check
+        was case-sensitive. A grep for lowercase "gemini" over a file containing "Gemini"
+        proves nothing.
+
+        Even a correct grep would only cover this one file, and nobody breaches this
+        boundary by adding ``import google.genai`` to the verifier. They add an
+        innocent-looking import of something that does.
+        """
+        loaded = self._modules_loaded_by_importing_the_verifier()
+
+        reachable = sorted(
+            m for m in loaded
+            if m.startswith("backend")
+            and any(k in m.lower() for k in ("llm", "agent", "gemini", "genai"))
+        )
+        assert not reachable, f"the verifier can reach model-calling modules: {reachable}"
+
+        for sdk in ("google.genai", "google.generativeai", "vertexai", "openai", "anthropic"):
+            assert sdk not in loaded, f"importing the verifier loaded {sdk}"
+
+    def test_the_verifier_reaches_only_its_declared_dependencies(self) -> None:
+        """An allowlist, so a *new* dependency has to be argued for rather than noticed.
+
+        The forbidden-substring form can only catch what someone thought to forbid. This
+        fails on anything unexpected, which is the direction that scales.
+        """
+        loaded = {m for m in self._modules_loaded_by_importing_the_verifier()
+                  if m.startswith("backend")}
+        allowed = {
+            "backend", "backend.core", "backend.core.enums", "backend.core.errors",
+            "backend.core.hashing", "backend.core.ids", "backend.core.schemas",
+            "backend.core.versions", "backend.verifier", "backend.verifier.statistics",
+            "backend.verifier.verifier",
+        }
+        unexpected = sorted(loaded - allowed)
+        assert not unexpected, (
+            f"the verifier gained dependencies nobody declared: {unexpected}. "
+            "If one is legitimate, add it to `allowed` and say why in the commit."
+        )

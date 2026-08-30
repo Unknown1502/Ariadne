@@ -83,7 +83,7 @@ parametrized test. v1 sits at 0.000 observed, v2 at 1.000, v3 between 0.375 and 
 **Design pack:** prompt 13 asks for comparison against "a fixed test suite", "single-agent
 orchestration", and "no-lineage mode".
 
-**Decision:** compare `full` against `no-control`, `no-validity`, and `self-report` — the
+**Decision:** compare `full` against `no-control`, `no-validity`, and `assume-faithful` — the
 same code with exactly one mechanism removed.
 
 **Why:** to score a "single-agent LLM workflow" honestly, one would have to build it and run
@@ -92,12 +92,39 @@ support rate would be fabricating a measurement, and the resulting numbers would
 stub rather than anything real.
 
 Ablations avoid that entirely: identical code, identical fixtures, one variable. Each answers
-a question a reviewer should ask — and each mechanism demonstrably earns its place
-(no-control costs 1 false support; no-validity costs 3 false contradictions).
+a question a reviewer should ask.
 
-`self-report` is a fixed rule that reads the target model's own explanation and concludes
-SUPPORTED because that is what the explanation asserts. It is labelled in the report as *not*
-a language model, and makes no claim about how one would behave.
+**How far each answer actually goes, at n=14.** `no-validity` costs 3 false contradictions
+against zero - a difference large enough, and with an interpretable failure mode (every one
+is a distribution-shift case where the probe cannot move the input), that the gate is doing
+visible work. `no-control` costs exactly *one* case, and one discordant pair is the weakest
+possible evidence: McNemar returns p=1.0. The control arm may well earn its place, but this
+benchmark does not show that it does, and saying it "demonstrably" does - as this section
+previously did - was overreach. The argument for the control arm is currently a mechanism
+argument, not an empirical one.
+
+**Correction, made after a hostile self-audit of this very document.** This configuration
+was called `self-report` and described here as one that "reads the target model's own
+explanation and concludes SUPPORTED". That overstated it in the way that mattered most: the
+code reads nothing. It is the literal constant `SUPPORTED` - a single assignment in
+`run_benchmark.py`.
+
+So its error rate is not a measurement. It is a restatement of how many benchmark cases are
+declared non-SUPPORTED: 10 of the 12 that reach a verdict, hence 83%. Quoted as "trusting
+the model gives an 83% false-support rate" - which is how the README quoted it - the number
+is circular. A benchmark with a different verdict mix moves it without anything changing
+about explanations or about Ariadne, and it was the headline figure, which is precisely
+where a skeptical reader would have found the circularity first.
+
+Renamed to `assume-faithful`, relabelled a *floor reference* rather than a baseline, and the
+report now prints the verdict mix immediately beside it so the two cannot be read apart. A
+test (`test_the_floor_reference_matches_the_benchmark_mix_it_restates`) pins the rate to that
+computation so they cannot drift. Its one legitimate use survives unchanged: no
+configuration may score below "always say yes".
+
+What this does **not** do is measure what trusting a real model costs. That needs real
+explanations from real models against known ground truth, and no number in this benchmark is
+a substitute for it.
 
 ---
 

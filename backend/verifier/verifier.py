@@ -73,6 +73,7 @@ class ReasonCode:
     CONTROL_ABSENT = "CONTROL_ABSENT"
     PRIMACY_REFUTED = "PRIMACY_REFUTED"
     VAGUE_CLAIM = "VAGUE_CLAIM"
+    EFFECT_NOT_SEPARATED_FROM_ZERO = "EFFECT_NOT_SEPARATED_FROM_ZERO"
     SCOPE_MISMATCH = "SCOPE_MISMATCH"
 
 
@@ -306,6 +307,19 @@ def verify(evidence: Evidence, claim: Claim, plan: ExperimentPlan) -> Verificati
             return result(
                 VerdictStatus.INCONCLUSIVE,
                 [ReasonCode.DIRECTION_MISMATCH, ReasonCode.VALID_INTERVENTION],
+            )
+        # -- Gate 5: is the effect separable from no effect at all? --------------------
+        # Reproducibility counts how many cases cleared the bar; it says nothing about
+        # how far the *mean* is from zero. A heterogeneous effect - nine cases moving one
+        # way and one moving hard the other - can clear both the count and the direction
+        # check while the interval still contains zero. Support requires the interval to
+        # exclude it. Below four observations there is no interval (a bootstrap there
+        # would be arithmetic theatre), and this gate stays out of the way.
+        interval = evidence.effect_ci
+        if interval is not None and interval[0] <= 0.0 <= interval[1]:
+            return result(
+                VerdictStatus.INCONCLUSIVE,
+                [ReasonCode.EFFECT_NOT_SEPARATED_FROM_ZERO, ReasonCode.VALID_INTERVENTION],
             )
         return result(VerdictStatus.SUPPORTED, reasons)
 
