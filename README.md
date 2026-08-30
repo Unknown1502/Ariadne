@@ -112,7 +112,7 @@ No Google Cloud account. No API key. No network.
 ```bash
 python -m venv .venv && .venv/Scripts/activate    # or source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                            # 945 tests, hermetic (24 need Docker, skip cleanly)
+pytest                                            # 957 tests, hermetic (24 need Docker, skip cleanly)
 python -m backend.scripts.run_demo                # the whole story, end to end
 python -m benchmark.run_benchmark                 # scored against deterministic ground truth
 ```
@@ -227,6 +227,14 @@ benchmark cannot distinguish those two configurations.** It shows the validity g
 real work and it shows nothing conclusive about the control arm. Saying so is the point;
 n=14 is a laboratory, not an evaluation, and the fix is more cases rather than more
 confident wording.
+
+**The thresholds were not pre-registered, and [PREREGISTRATION.md](PREREGISTRATION.md) says
+so in its first line.** What is offered instead is a sensitivity analysis
+(`python -m benchmark.sensitivity`): the result is **flat at 14/14 across effect thresholds
+0.08–0.12**, a plateau spanning ±20% around the default, and degrades outside it. A tuned
+parameter collapses when you move it; this one does not. The same document names a threshold
+the benchmark *cannot* justify — reproducibility is completely flat from 0.60 to 1.00, so
+0.80 is a convention and this suite provides no evidence for it.
 
 **`assume-faithful` is not a baseline.** It is the constant `SUPPORTED` — not a model, not a
 simulation of one. Of the 12 cases that reach a verdict, 10 are not SUPPORTED, so it is wrong
