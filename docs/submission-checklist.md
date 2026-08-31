@@ -91,6 +91,10 @@ The items most worth failing on:
 - [x] Every ablation accuracy is reported with a 95% Wilson interval, and the doc states
       plainly that full vs no-control is **not** statistically distinguishable at n=14
 - [x] SUPPORTED requires the bootstrap interval to exclude zero, not just a head-count
+- [x] The experiment runner fails closed on model identity — an event for a model whose
+      endpoint cannot be established produces FAILED with the reason, never a substituted
+      run against a different model. Verified live; recorded as F11 in
+      `docs/architecture-review.md`
 - [x] Limitations are stated in the same detail as capabilities
 - [x] Deviations from the design pack are documented with reasoning — `docs/decisions.md`
 
@@ -104,8 +108,18 @@ The items most worth failing on:
       `Host` header
 - [x] Idempotency demonstrated against the live deployment — six already-processed events
       replayed, `duplicates_suppressed: 6`, `investigations_started: 0`
-- [x] A real third-party model audited end to end — Gemini 2.5 Flash via Vertex AI, 68 live
-      calls, `docs/real-model-audit.md`
+- [x] A real third-party model audited end to end — Gemini 2.5 **and** 3.5 Flash via Vertex
+      AI, and the two versions disagree about the same explanation (`docs/real-model-audit.md`)
+- [x] **Gemini as the Investigator** exercised live, which is a different surface from the
+      audit above. `/api/v1/system` reports `provider: "gemini"`, a full investigation
+      completes end to end through Vertex AI, and claim-extraction quality is now measured
+      rather than declared unmeasured — primacy F1 0.143 for the keyword matcher against
+      0.963 for Gemini (`docs/investigator-evaluation.md`)
+- [x] Adversarial evaluation against live Gemini — 24 attacks, no false SUPPORTED observed,
+      and the claim-compilation security boundary quantified (`docs/adversarial-evaluation.md`)
+- [x] Model onboarding is real: register, connect, probe, declare output, validate against a
+      real response, declare feature semantics, register an explanation source, and reach
+      READY_FOR_VERIFICATION through six gates re-derived from live state
 
 ```bash
 curl https://ariadne-api-uhcrowxnsq-el.a.run.app/api/v1/system
@@ -116,16 +130,9 @@ curl https://ariadne-api-uhcrowxnsq-el.a.run.app/api/v1/runtime
 
 Stated plainly rather than omitted:
 
-- [ ] **Gemini as the Investigator** exercised against the real API. Note this is *not* the
-      same as the Gemini audit above: that ran Gemini as the model being *audited*. The
-      agent-side `GeminiClient` is written, typed, and tested against SDK-shaped doubles, but
-      the benchmark and the live deployment both run the offline reasoner
-      (`/api/v1/system` reports `provider: "stub"`), so Gemini's claim-extraction quality is
-      still unmeasured. `docs/limitations.md` has the table separating the two.
-- [ ] Four-minute video recorded
+- [ ] Four-minute video recorded — **the only mandatory submission artifact still missing**
 - [ ] Technical blog post
 - [ ] Public repository
-- [ ] Console visual redesign — drafts exist, none chosen
 - [ ] Frontend test framework — the console has no unit tests at all; its logic is covered
       by typecheck and by checking behaviour against the live API
 - [ ] Pub/Sub **push** subscription — the worker's in-process pull loop is why the

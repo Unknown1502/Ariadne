@@ -4,12 +4,12 @@ Prompt 17, run as a hostile pass over the repository rather than a summary of it
 was to look for **claims the code does not honour** — docstrings, docs, and config options
 that promise something no code path delivers.
 
-That framing found ten. Eight were real, and five of those were of the same shape:
+That framing found eleven. Nine were real, and five of those were of the same shape:
 *a capability that is described confidently and implemented partially or not at all.* For a
 project whose entire thesis is "explanations should have to prove themselves", that is the
 most damaging class of defect there is.
 
-All eight are fixed. Findings are listed with the evidence that proved them.
+All nine are fixed. Findings are listed with the evidence that proved them.
 
 The pattern recurred three times before it was automated away. F1 was found by reading the
 adapter list; F2 by asking "where else?" straight after; F8 by finally writing the twenty-line
@@ -26,6 +26,12 @@ F10 is a third species, and the one that took longest to think of: an implementa
 *was* exercised on every CI run and still went unchecked, because what it produced was
 console output and nothing read it. It hid a forked hash chain in the append-only ledger —
 the structure this project points at when it says history cannot be rewritten.
+
+F11 is a fourth, and the most uncomfortable: code that was correct when written and became
+incorrect when the system grew around it, without being edited. The experiment runner could
+not tell one model from another because it was never given the identity — harmless while
+there was one model, and a route to confident evidence about the wrong model the moment there
+were two.
 
 ---
 
@@ -252,6 +258,50 @@ apart, where the timestamp tie cannot occur — so the suite was green, the type
 and the demo printed `Hash chain intact: True` truthfully, because it prints that line
 *before* the distribution shift. Output that no test reads is output that can drift as freely
 as a docstring, and this project's most-watched artifact was exactly that.
+
+### F11 — The experiment runner could execute against the wrong model · **CRITICAL** · fixed
+
+The most dangerous defect in the set, and it was invisible for as long as there was only one
+model to run against.
+
+`ExperimentRunner` resolved its target through a factory taking `(version,
+distribution_version)`. No `model_id`. The runner could not distinguish one organisation's
+model from the built-in laboratory **even in principle** — it was never given the
+information that would let it try.
+
+For a single-model demonstration that is unremarkable. The moment models became a registered
+resource, with connections and endpoints of their own, it meant an organisation could
+register their model, pass every readiness gate, receive a `MODEL_VERSION_DEPLOYED` event —
+and have the experiment execute against the laboratory instead.
+
+**The failure mode is not a wrong verdict. It is a confident verdict about the wrong model.**
+Evidence would be recorded, hashed, scoped to their model version and distribution, appended
+to the chain, and used to re-audit their standing claims. Lineage, expiry and the append-only
+guarantee would all work perfectly, and all preserve a measurement of something else. Nothing
+downstream could detect it, because every one of those mechanisms trusts the scope it is
+handed — the scope was correct, only the model was not.
+
+The fix is a resolution rule rather than a patch: **fail closed, never substitute.**
+`backend/integrations/resolver.py` dispatches on model identity and raises when the requested
+model cannot be reached exactly as configured — unregistered id, no connection attached,
+connection not live, unsupported transport, or feature semantics that were never validated.
+Each refusal names the fix. An experiment that does not run costs an event; an experiment
+that runs against the wrong model costs the integrity of every verdict derived from it.
+
+Verified on the live deployment rather than reasoned about. An event for a registered but
+unconfigured model produced `FAILED` with *"model 'acceptance-model' has no model-endpoint
+connection, so there is nothing to probe. Attach a connection and test it."* — not a
+substituted laboratory run, not a fabricated verdict. In the same deployment the laboratory
+path continued to verify normally, v2.0.0 on `shifted_2025.2` completing INCONCLUSIVE with
+the worker reporting zero failures.
+
+**What this adds to the method.** F1–F8 asked whether a path was exercised. F9 asked whether
+a double enforced what the real dependency does. F10 asked whether anything asserted what
+the code *printed*. F11 is a fourth question, and the one most specific to systems that grow:
+*does this component still have enough information to be correct now that the system around
+it has changed?* The runner was correct when it was written. It became incorrect when models
+became plural, without a line of it being edited — and nothing in a test suite, a type check
+or a lint can detect a component quietly outliving its assumptions.
 
 ---
 

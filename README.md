@@ -99,6 +99,45 @@ statement about urgency is never tested. The verifier did not fail; it was never
 Mis-compilation is an **evasion amplifier, not a false-support pathway**, and any system that
 turns language into a structured test inherits the same boundary.
 
+## We audit ourselves the same way
+
+Eleven findings from hostile passes over our own repository, nine of them real, all fixed
+([docs/architecture-review.md](docs/architecture-review.md)). The most serious was found on
+the last day.
+
+**Our experiment runner could silently execute against the wrong model.** It resolved its
+target from `(version, distribution)` and never received the model's identity — so it could
+not distinguish a customer's model from our built-in laboratory *even in principle*.
+
+Harmless while there was one model. The moment models became a registered resource it meant
+an organisation could connect their endpoint, pass every readiness gate, receive a deployment
+event, and have the experiment run against our laboratory instead.
+
+The failure mode is the part worth sitting with. **Not a wrong verdict — a confident verdict
+about the wrong model.** Evidence would be recorded, hashed, scoped to their model and
+version, appended to the chain, and used to re-audit their standing claims. Lineage, expiry
+and the append-only guarantee would all work perfectly and all preserve a measurement of
+something else. Nothing downstream could catch it, because each of those mechanisms trusts
+the scope it is handed — and the scope was correct. Only the model was not.
+
+We changed resolution to **fail closed**: an unregistered id, a missing connection, a dead
+connection, an unsupported transport or unvalidated feature semantics each stop the
+experiment, naming the fix. Then we verified the refusal on the live deployment rather than
+reasoning about it:
+
+```
+event for a registered-but-unconfigured model
+  -> FAILED  "model 'acceptance-model' has no model-endpoint connection,
+              so there is nothing to probe. Attach a connection and test it."
+
+same deployment, laboratory path
+  -> v2.0.0 / shifted_2025.2  INCONCLUSIVE  COMPLETE   worker failures: 0
+```
+
+**The system refuses to produce evidence when it cannot establish which model it is
+measuring.** An experiment that does not run costs an event. An experiment that runs against
+the wrong model costs the integrity of every verdict derived from it.
+
 ## It is running
 
 | | |
