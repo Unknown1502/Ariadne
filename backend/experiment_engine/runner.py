@@ -205,7 +205,29 @@ class ExperimentRunner:
             )
 
     def _resolve_model(self, plan: ExperimentPlan) -> TargetModel:
-        model = self._model_factory(plan.scope.model_version, plan.scope.distribution_version)
+        """Resolve by identity, not just by version.
+
+        The factory used to receive `(version, distribution)` and no `model_id`, so it could
+        not distinguish one organisation's model from the built-in laboratory even in
+        principle. For a single-model demo that was invisible; once models became a
+        registered resource it became the most dangerous defect available here - a confident
+        verdict about the wrong model, scoped and recorded as though it described the right
+        one.
+
+        A factory that accepts the identity gets it. The three-argument form is tried first
+        and the older two-argument form still works, so every existing caller and test is
+        unaffected.
+        """
+        try:
+            model = self._model_factory(
+                plan.scope.model_version,
+                plan.scope.distribution_version,
+                model_id=plan.scope.model_id,
+            )
+        except TypeError:
+            model = self._model_factory(
+                plan.scope.model_version, plan.scope.distribution_version
+            )
         if model.version != plan.scope.model_version:
             raise VersionMismatch(
                 f"resolved model is v{model.version}, plan requires v{plan.scope.model_version}"

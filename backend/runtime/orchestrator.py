@@ -473,6 +473,24 @@ class InvestigationPipeline:
         )
 
 
+def _target_model_factory(runtime: Any):
+    """A factory that dispatches on model identity, falling back to nothing.
+
+    The resolver refuses rather than substituting, so an unregistered or unreachable model
+    stops the experiment instead of silently redirecting it.
+    """
+    from backend.integrations.resolver import resolve_target_model
+
+    def factory(version: str, distribution_version: str, *, model_id: str | None = None):
+        from backend.experiment_engine.target_model import MODEL_ID as LABORATORY
+
+        return resolve_target_model(
+            model_id or LABORATORY, version, distribution_version, runtime=runtime
+        )
+
+    return factory
+
+
 def build_pipeline(
     *,
     ledger: EvidenceLedger,
@@ -542,7 +560,15 @@ def build_pipeline(
         experimenter=Experimenter(
             reasoner,
             manifest=bounded(EXPERIMENTER_MANIFEST),
-            runner=ExperimentRunner(clock=clock, run_store=runtime),
+            runner=ExperimentRunner(
+                clock=clock,
+                run_store=runtime,
+                # Resolve the target by identity. Without this the engine runs every
+                # experiment against the built-in laboratory regardless of which model the
+                # event named - which for a registered customer model would record evidence
+                # about the wrong thing, correctly scoped and therefore undetectable.
+                model_factory=_target_model_factory(runtime),
+            ),
             clock=clock,
             audit=audit,
             default_repetitions=default_repetitions,
