@@ -20,15 +20,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
+from sqlalchemy.exc import IntegrityError
+
 from backend.core.clock import Clock, SystemClock
 from backend.core.enums import LineageRelation, VerdictStatus
-from backend.core.errors import ValidationError
+from backend.core.errors import StorageError, ValidationError
 from backend.core.hashing import hash_chain
 from backend.core.ids import LINEAGE_PREFIX, derive_id
 from backend.core.schemas import Evidence, LineageEntry, Verdict, VersionScope
 from backend.storage.sql import EvidenceLedger
 
 DEFAULT_VALIDITY_DAYS = 90
+
+MAX_CHAIN_ATTEMPTS = 8
+"""How many times an append re-reads the tail after losing a race.
+
+Bounded rather than unbounded: a retry loop that never gives up turns a genuine schema
+problem into a hang, and this contends only with other appends to the *same claim family*,
+which is a narrow enough door that eight attempts is generous."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -98,51 +107,79 @@ class LineageService:
                 f"entry must be traceable to the measurements behind it"
             )
 
-        history = self._ledger.lineage_for_family(verdict.claim_family_id)
-        previous = self._chain_tail(history)
-        relation, supersedes = self._derive_relation(verdict, history)
         moment = valid_from or self._clock.now()
+        return self._append_chained(verdict, evidence, moment)
 
-        payload = {
-            "claim_family_id": verdict.claim_family_id,
-            "claim_id": verdict.claim_id,
-            "verdict_id": verdict.id,
-            "status": verdict.status,
-            "scope": verdict.scope,
-            "evidence_ids": sorted(verdict.evidence_ids),
-            "effect_size": verdict.effect_size,
-            "protocol_version": verdict.protocol_version,
-            "verifier_version": verdict.verifier_version,
-            "valid_from": moment,
-            "relation": relation,
-        }
-        entry_hash = hash_chain(previous.entry_hash if previous else None, payload)
+    def _append_chained(
+        self, verdict: Verdict, evidence: Evidence, moment: datetime
+    ) -> LineageEntry:
+        """Append to the family's tail, re-reading it if another writer got there first.
 
-        entry = LineageEntry(
-            id=derive_id(LINEAGE_PREFIX, verdict.id, entry_hash),
-            claim_family_id=verdict.claim_family_id,
-            claim_id=verdict.claim_id,
-            scope=verdict.scope,
-            protocol_version=verdict.protocol_version,
-            verdict_id=verdict.id,
-            status=verdict.status,
-            evidence_ids=sorted(verdict.evidence_ids),
-            behavioral_support=verdict.behavioral_support,
-            intervention_validity=verdict.intervention_validity,
-            reproducibility=verdict.reproducibility,
-            effect_size=verdict.effect_size,
-            relation=relation,
-            supersedes_entry_id=supersedes,
-            valid_from=moment,
-            created_at=moment,
-            input_hashes=list(evidence.input_hashes),
-            output_hashes=list(evidence.output_hashes),
-            verifier_version=verdict.verifier_version,
-            previous_entry_hash=previous.entry_hash if previous else None,
-            entry_hash=entry_hash,
+        Reading the tail and writing the successor are two statements, so two workers can
+        both read the same tail and both append to it - which is how the deployed ledger
+        acquired a fork. The database now refuses the second write; this loop is what makes
+        that refusal harmless: the loser re-reads, discovers the winner's entry, and chains
+        onto it. The relation is recomputed too, because "supersedes what?" depends on the
+        history that actually won.
+        """
+        last_error: Exception | None = None
+        for _ in range(MAX_CHAIN_ATTEMPTS):
+            history = self._ledger.lineage_for_family(verdict.claim_family_id)
+            previous = self._chain_tail(history)
+            relation, supersedes = self._derive_relation(verdict, history)
+
+            payload = {
+                "claim_family_id": verdict.claim_family_id,
+                "claim_id": verdict.claim_id,
+                "verdict_id": verdict.id,
+                "status": verdict.status,
+                "scope": verdict.scope,
+                "evidence_ids": sorted(verdict.evidence_ids),
+                "effect_size": verdict.effect_size,
+                "protocol_version": verdict.protocol_version,
+                "verifier_version": verdict.verifier_version,
+                "valid_from": moment,
+                "relation": relation,
+            }
+            entry_hash = hash_chain(previous.entry_hash if previous else None, payload)
+
+            entry = LineageEntry(
+                id=derive_id(LINEAGE_PREFIX, verdict.id, entry_hash),
+                claim_family_id=verdict.claim_family_id,
+                claim_id=verdict.claim_id,
+                scope=verdict.scope,
+                protocol_version=verdict.protocol_version,
+                verdict_id=verdict.id,
+                status=verdict.status,
+                evidence_ids=sorted(verdict.evidence_ids),
+                behavioral_support=verdict.behavioral_support,
+                intervention_validity=verdict.intervention_validity,
+                reproducibility=verdict.reproducibility,
+                effect_size=verdict.effect_size,
+                relation=relation,
+                supersedes_entry_id=supersedes,
+                valid_from=moment,
+                created_at=moment,
+                input_hashes=list(evidence.input_hashes),
+                output_hashes=list(evidence.output_hashes),
+                verifier_version=verdict.verifier_version,
+                previous_entry_hash=previous.entry_hash if previous else None,
+                entry_hash=entry_hash,
+            )
+            try:
+                self._ledger.append_lineage(entry)
+            except IntegrityError as exc:
+                # Someone else claimed this parent between our read and our write. Their
+                # entry is now part of the history; ours is not yet. Go around again.
+                last_error = exc
+                continue
+            return entry
+
+        raise StorageError(
+            f"could not append to claim family {verdict.claim_family_id} after "
+            f"{MAX_CHAIN_ATTEMPTS} attempts; the chain tail kept moving. Last error: "
+            f"{last_error}"
         )
-        self._ledger.append_lineage(entry)
-        return entry
 
     def expire_evidence(
         self,

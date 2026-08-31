@@ -33,6 +33,7 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
     create_engine,
     select,
 )
@@ -133,6 +134,9 @@ verdicts_table = Table(
     C("created_at", DateTime(timezone=True), index=True, nullable=False),
 )
 
+GENESIS_LINK = "@genesis"
+"""Stands in for "this entry starts the chain" so the uniqueness rule can see it."""
+
 lineage_table = Table(
     "lineage_entries",
     metadata,
@@ -151,6 +155,16 @@ lineage_table = Table(
     C("created_at", DateTime(timezone=True), index=True, nullable=False),
     C("entry_hash", String(80), nullable=False),
     C("previous_entry_hash", String(80), nullable=True),
+    # A chain that forks is not a chain. Two entries naming the same parent means two
+    # concurrent appends each read the tail before either had committed, and the "nothing
+    # is overwritten" guarantee quietly becomes "nothing is overwritten, but history may
+    # branch and the reader picks a side". That happened in the deployed system and was
+    # visible only because the console renders chain state; nothing in the schema forbade
+    # it. Now the database does, and `append_verdict` retries onto the winner.
+    # Genesis carries a sentinel rather than NULL, because SQL treats NULLs as distinct:
+    # a unique index over a nullable parent would still admit two competing first entries.
+    C("chain_link", String(80), nullable=False),
+    UniqueConstraint("claim_family_id", "chain_link", name="uq_lineage_chain_link"),
 )
 
 debt_table = Table(
@@ -364,6 +378,7 @@ class EvidenceLedger:
                 "created_at": entry.created_at,
                 "entry_hash": entry.entry_hash,
                 "previous_entry_hash": entry.previous_entry_hash,
+                "chain_link": entry.previous_entry_hash or GENESIS_LINK,
             },
         )
 

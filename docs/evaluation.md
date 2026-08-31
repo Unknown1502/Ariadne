@@ -142,7 +142,7 @@ tests/security/      injection payloads, privilege boundaries, ledger tampering
 tests/benchmark/     the benchmark itself, as a regression gate
 ```
 
-1209 tests, 92% line coverage on `backend/`. Every test is hermetic: no network, no cloud
+1202 tests, 92% line coverage on `backend/`. Every test is hermetic: no network, no cloud
 account, no wall-clock dependency, no unseeded randomness. A failure means a regression, not a
 flake. The 24 skips are the Firestore and Pub/Sub emulator suites, which need Docker and skip
 cleanly without it.
@@ -161,7 +161,9 @@ than relying on anyone remembering to make it:
 | `test_demo_narrative.py` | the demo script's *output*, which CI previously checked only for exit status |
 
 The last is the newest and found the most: asserting what `run_demo.py` prints surfaced a
-forked hash chain in the append-only ledger. See `docs/architecture-review.md` §F10.
+forked hash chain in the append-only ledger. See `docs/architecture-review.md` §F10 — and
+§F12, where the same chain forked again for an unrelated reason, found by reading the
+deployed console rather than any test.
 
 The lesson each of these encodes is the one in `docs/decisions.md`: *a check that has to be
 remembered will be forgotten.* Every one of them was written after the thing it guards had

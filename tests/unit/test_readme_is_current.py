@@ -34,8 +34,6 @@ class TestEveryLinkResolves:
         on_disk = {
             f"docs/{p.name}"
             for p in (REPO / "docs").glob("*.md")
-            # Deliberately unlinked: an internal record rather than a reader-facing doc.
-            if p.name not in {"submission-checklist.md"}
         }
         unlinked = sorted(d for d in on_disk if d not in README)
         assert not unlinked, f"docs exist but the README never links them: {unlinked}"

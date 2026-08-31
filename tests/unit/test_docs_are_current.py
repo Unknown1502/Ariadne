@@ -110,7 +110,7 @@ class TestTheDocumentationSetIsCoherent:
         unlinked = sorted(
             f"docs/{p.name}"
             for p in (REPO / "docs").glob("*.md")
-            if p.name not in {"submission-checklist.md"} and f"docs/{p.name}" not in readme
+            if f"docs/{p.name}" not in readme
         )
         assert not unlinked, f"docs exist but the README never links them: {unlinked}"
 

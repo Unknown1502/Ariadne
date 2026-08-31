@@ -145,6 +145,11 @@ the wrong model costs the integrity of every verdict derived from it.
 | Console | **https://ariadne-console-uhcrowxnsq-el.a.run.app** |
 | API | **https://ariadne-api-uhcrowxnsq-el.a.run.app** |
 
+Cloud Run issues each service a second, project-scoped address; both reach the same
+revision, and the demo video shows these because they name the region out loud:
+`https://ariadne-console-840127127218.asia-south1.run.app` and
+`https://ariadne-api-840127127218.asia-south1.run.app`.
+
 Google Cloud Run, with real Pub/Sub, Firestore, and Cloud SQL — not a mock. Three endpoints
 a reviewer can check without trusting anything written here:
 
@@ -199,7 +204,7 @@ No Google Cloud account. No API key. No network.
 ```bash
 python -m venv .venv && .venv/Scripts/activate    # or source .venv/bin/activate
 pip install -e ".[dev]"
-pytest                                            # 1209 tests, hermetic (24 need Docker, skip cleanly)
+pytest                                            # 1202 tests, hermetic (24 need Docker, skip cleanly)
 python -m backend.scripts.run_demo                # the whole story, end to end
 python -m benchmark.run_benchmark                 # scored against deterministic ground truth
 ```
@@ -215,23 +220,230 @@ The console has no "Analyze" button. It publishes events — the same events a m
 and a drift monitor publish — and then it only reads. Investigations appear because a
 background worker picked the event up.
 
-## How it works
+## Architecture
+
+Seven views, from the deployment down to the row that records a verdict. Every element below
+exists in the code; none of it is aspirational.
+
+### 1. The system on Google Cloud
+
+```mermaid
+flowchart TB
+    subgraph Outside["Outside Ariadne"]
+        REG[Model registry]
+        DRIFT[Drift monitor]
+        HUMAN[Reviewer]
+    end
+
+    subgraph GCP["Google Cloud - project ariadne-12, region asia-south1"]
+        subgraph CR["Cloud Run"]
+            CONSOLE["Console - React and Vite"]
+            API["FastAPI service"]
+            WORKER["Worker event loop, same container"]
+        end
+        BUS[["Pub/Sub - deployment and drift events"]]
+        FS[("Firestore - idempotency keys, checkpoints, scheduled re-audits, approvals")]
+        SQL[("Cloud SQL - append-only evidence ledger")]
+        VERTEX{{"Vertex AI - Gemini 3.5 Flash"}}
+    end
+
+    REG -->|MODEL_VERSION_DEPLOYED| BUS
+    DRIFT -->|DISTRIBUTION_CHANGED| BUS
+    HUMAN --> CONSOLE
+    CONSOLE -->|publishes events, never verdicts| API
+    API --> BUS
+    BUS -->|at least once| WORKER
+    WORKER -->|exactly-once work| FS
+    WORKER -->|verdicts and lineage| SQL
+    WORKER -->|claim compilation and probe design only| VERTEX
+    SQL --> API
+    FS --> API
+    API -->|read-only| CONSOLE
+```
+
+**What to notice.** The console has exactly two arrows: it publishes events, and it reads.
+There is no path from the interface to a verdict, so nothing on screen can be true only on
+screen. Work starts from a deployment event, not from a person pressing a button.
+
+### 2. Where the language model may and may not reach
+
+```mermaid
+flowchart TB
+    subgraph Reasoning["Gemini reaches these - semantic judgement"]
+        INV["Investigator - writes: claim"]
+        EXP["Experimenter - writes: experiment, evidence.raw"]
+        ADV["Governor advisor - writes: nothing"]
+    end
+
+    subgraph Deterministic["No language model is reachable here"]
+        ENG["Experiment engine - executes the probe"]
+        VER["Verifier - writes: verdict, lineage"]
+        DEBT["Explanation Debt - a policy score, not a measurement"]
+        POL["Policy engine - chooses a bounded action"]
+    end
+
+    INV --> EXP --> ENG --> VER --> DEBT --> POL
+    ADV -.->|recommends, never decides| POL
+```
+
+**What to notice.** The dotted line is the whole architectural argument. A model may propose
+what an explanation claims and how to test it; nothing it produces can become a verdict.
+`AgentManifest` raises if a Verifier is declared with `uses_llm=True`, and a test imports the
+verifier in a fresh interpreter subprocess to prove that no model-calling module loads.
+
+### 3. An explanation becomes a verdict
 
 ```mermaid
 flowchart LR
-    EV[MODEL_VERSION_DEPLOYED] --> W[Worker]
-    W -->|claim idempotency key| ID[(Runtime state)]
-    W --> I[Investigator]
-    I -->|Claim| E[Experimenter]
-    E -->|runs probe| TM[Synthetic target model]
-    E -->|Evidence| V[Verifier]
-    V -->|Verdict| L[(Evidence ledger)]
-    L --> D[Explanation Debt]
-    D --> G[Governor]
-    G -->|bounded action| SCH[Scheduled re-audit / human review]
-    style V fill:#1e242d,stroke:#3fb6a8,color:#e6e9ee
-    style TM fill:#1e242d,stroke:#8a94a3,color:#e6e9ee
+    EXPL["Model explanation - free text"] --> CLAIM["Compiled claim - driver, primacy, direction"]
+    CLAIM --> VALID{"Is it testable?"}
+    VALID -->|no| INC["INCONCLUSIVE"]
+    VALID -->|yes| BASE["Baseline arm"]
+    BASE --> INT["Intervention arm - neutralize the named feature"]
+    INT --> CTRL["Control arm - a feature never named"]
+    CTRL --> EV["Evidence - effect, interval, reproducibility"]
+    EV --> VER{"Verifier - deterministic"}
+    VER --> SUP["SUPPORTED"]
+    VER --> CON["CONTRADICTED"]
+    VER --> INC
 ```
+
+**What to notice.** There are exactly three verdicts and no fourth. INCONCLUSIVE is a result,
+not a failure. The control arm is what separates "the named feature matters" from "the named
+feature matters *most*", which is what a claim of primacy actually asserts.
+
+### 4. One event, end to end
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant BUS as Pub/Sub
+    participant W as Worker
+    participant FS as Firestore
+    participant I as Investigator
+    participant E as Experimenter
+    participant TM as Target model
+    participant V as Verifier
+    participant SQL as Cloud SQL
+
+    BUS->>W: MODEL_VERSION_DEPLOYED v2.0.0
+    W->>FS: claim idempotency key
+    Note over W,FS: Atomic. A redelivery finds it taken and stops.
+    W->>SQL: which claims does this version reopen?
+    SQL-->>W: family X, contradicted on v1
+    W->>I: compile the standing explanation
+    I-->>W: Claim - asserts primacy, testability 0.92
+    W->>E: design a probe
+    E-->>W: neutralize urgency_marker, control signal_c, seed 20260101
+    loop each fixture case
+        E->>TM: baseline, intervention, control
+        TM-->>E: scores
+    end
+    E-->>W: Evidence - hashed, with no verdict field
+    W->>V: verify
+    V-->>W: CONTRADICTED - control moved the score further
+    W->>SQL: append verdict, then lineage entry
+    Note over W,SQL: Append-only. A new result never edits an old one.
+```
+
+**What to notice.** Evidence has no verdict field, by construction. The verdict is computed
+from the measurements afterwards, so no agent can file a conclusion alongside the data it
+came from.
+
+### 5. The investigation state machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> CREATED
+    CREATED --> INGESTING
+    INGESTING --> CLAIM_EXTRACTED
+    CLAIM_EXTRACTED --> PROBE_PLANNED
+    PROBE_PLANNED --> INTERVENTION_VALIDATED
+    INTERVENTION_VALIDATED --> EXPERIMENT_RUNNING
+    INTERVENTION_VALIDATED --> VERIFICATION : a rejected probe is INCONCLUSIVE
+    EXPERIMENT_RUNNING --> VERIFICATION
+    VERIFICATION --> LINEAGE_UPDATED
+    LINEAGE_UPDATED --> DEBT_RECALCULATED
+    DEBT_RECALCULATED --> GOVERNOR_ACTION
+    GOVERNOR_ACTION --> REVIEW : high impact needs a human
+    GOVERNOR_ACTION --> COMPLETE
+    REVIEW --> COMPLETE
+    CREATED --> QUARANTINED
+    INGESTING --> QUARANTINED
+    CLAIM_EXTRACTED --> QUARANTINED
+    PROBE_PLANNED --> QUARANTINED
+    COMPLETE --> [*]
+    QUARANTINED --> [*]
+```
+
+**What to notice.** `INTERVENTION_VALIDATED --> VERIFICATION` is deliberate rather than a
+shortcut: a probe that cannot be built is an INCONCLUSIVE verdict carrying a reason code, not
+a crash. Every non-terminal state may also move to `FAILED`; those edges are omitted only to
+keep the diagram readable.
+
+### 6. Onboarding: six gates, and a refusal
+
+```mermaid
+flowchart LR
+    REGISTER["Register a model"]
+    subgraph Gates["Re-derived from live state every time, never a stored flag"]
+        G1["MODEL_ENDPOINT - a real probe succeeded"]
+        G2["OUTPUT_CONTRACT - validated against a real response"]
+        G3["EXPLANATION_SOURCE - explanations have somewhere to arrive from"]
+        G4["FEATURE_SEMANTICS - a defensible neutral value"]
+        G5["LIFECYCLE_EVENTS - changes trigger a re-test"]
+        G6["EVIDENCE_STORE - a verdict has somewhere to go"]
+    end
+    REGISTER --> G1
+    G1 --> G2 --> G3 --> G4 --> G5 --> G6
+    G6 --> DECIDE{"Do all six pass?"}
+    DECIDE -->|no| CONF["CONFIGURING - each gate names its next step"]
+    DECIDE -->|yes| READY["READY_FOR_VERIFICATION"]
+    CONF -.->|an event arrives anyway| REFUSE["FAILED - Ariadne will not run against a model it cannot resolve"]
+```
+
+**What to notice.** Readiness is computed, never stored, so a model whose endpoint later dies
+stops being ready the next time anyone asks. The dotted edge is finding F11: resolution fails
+closed, because a confident verdict about the wrong model is worse than no verdict at all.
+
+### 7. What a verdict is attached to
+
+```mermaid
+erDiagram
+    CLAIM_FAMILY ||--o{ LINEAGE_ENTRY : accumulates
+    LINEAGE_ENTRY ||--|| VERDICT : records
+    VERDICT ||--o{ EVIDENCE : computed_from
+    EVIDENCE ||--|| EXPERIMENT : produced_by
+    VERDICT ||--|| VERSION_SCOPE : true_only_of
+
+    VERSION_SCOPE {
+        string model_id
+        string model_version
+        string distribution_version
+    }
+    LINEAGE_ENTRY {
+        string entry_hash
+        string previous_entry_hash
+        string chain_link
+        string relation
+    }
+    EVIDENCE {
+        float effect_size
+        float reproducibility
+        string input_hashes
+        string output_hashes
+    }
+```
+
+**What to notice.** There is no way to construct a verdict without a `VersionScope`, which is
+what makes "the explanation is trustworthy" answerable only as "of which version, under which
+distribution". `chain_link` is unique per family, so the append-only history cannot fork —
+finding F12. Expiring evidence appends an `EXPIRES` row rather than editing the old one, so
+"current" is a computed view over history rather than a mutable flag.
+
+## How it works
+
+The diagrams above are the map. This is the argument.
 
 **Gemini reasons. Deterministic code decides.** The Investigator reads a sentence and
 decides what testable prediction it makes — genuinely ambiguous semantic work that rules
@@ -410,7 +622,6 @@ badge over a regex.
 - [Deployment](docs/deployment.md) — Google Cloud, cost controls, what to prove
 - [Integrating a real model](docs/integrating-a-real-model.md) — the adapter seam, and the honest cost of pointing this at a model you did not write
 - [Real-model audit](docs/real-model-audit.md) — Ariadne auditing Gemini 2.5 Flash, and what only a live model could reveal
-- [Demo script](docs/demo-script.md) — the four minutes, with the exact commands
 - [Limitations](docs/limitations.md) — what this does not establish
 - [Decisions](docs/decisions.md) — where the build deviates from the design docs, and why
 - [Architecture review](docs/architecture-review.md) — a hostile pass over the repo, and what it found

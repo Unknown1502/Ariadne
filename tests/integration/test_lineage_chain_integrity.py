@@ -214,3 +214,83 @@ class TestTheTailIsReadFromTheLinks:
         clock.advance(days=30)
         entry = audit("1.0.0")
         assert LineageService._chain_tail([entry]).id == entry.id
+
+
+def test_concurrent_appends_to_one_family_cannot_fork_the_chain(tmp_path):
+    """Two writers racing for the same tail must produce a line, not a branch.
+
+    The deployed ledger had a fork with exactly this shape: three entries stamped at one
+    instant, and one parent hash claimed twice. The cause was not the timestamp tie that
+    `_chain_tail` already handles - it was that reading the tail and writing its successor
+    are separate statements, so both workers read the same tail and both appended to it.
+
+    A single-threaded test cannot see this. Everything that is not under test is prepared
+    serially first; the threads then contend for one thing only - the tail of one claim
+    family - released from a barrier so their reads genuinely overlap.
+    """
+    import threading
+
+    from backend.core.clock import ManualClock
+    from backend.experiment_engine.runner import ExperimentRunner
+    from backend.lineage.service import LineageService
+    from backend.storage.sql import EvidenceLedger
+    from backend.verifier.verifier import generate_verdict
+    from tests.factories import T0, make_case
+
+    ledger = EvidenceLedger(f"sqlite:///{tmp_path / 'race.db'}")
+    clock = ManualClock(T0)
+    runner = ExperimentRunner(clock=clock)
+
+    # Distinct scopes inside one family, so the writes are genuinely different entries that
+    # nonetheless compete for the same tail.
+    scopes = [(v, d) for d in ("baseline_2024.1", "shifted_2025.2") for v in VERSIONS[:3]]
+    prepared = []
+    for version, distribution in scopes:
+        claim, plan = make_case(version, distribution)
+        result = runner.run(plan, claim)
+        verdict = generate_verdict(result.evidence, claim, plan, created_at=clock.now())
+        ledger.append_claim(claim)
+        ledger.append_plan(plan)
+        ledger.append_evidence(result.evidence)
+        ledger.append_verdict(verdict)
+        prepared.append((verdict, result.evidence))
+
+    barrier = threading.Barrier(len(prepared))
+    errors: list[BaseException] = []
+
+    def append(verdict, evidence) -> None:
+        try:
+            barrier.wait(timeout=30)
+            LineageService(ledger, clock=clock).append_verdict(verdict, evidence)
+        except BaseException as exc:  # noqa: BLE001 - reported, never swallowed
+            errors.append(exc)
+
+    threads = [threading.Thread(target=append, args=pair) for pair in prepared]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=60)
+
+    assert not errors, f"a writer failed instead of retrying: {errors[0]!r}"
+
+    family = prepared[0][0].claim_family_id
+    entries = ledger.lineage_for_family(family)
+    assert len(entries) == len(prepared), "an append was lost"
+
+    parents = [e.previous_entry_hash for e in entries if e.previous_entry_hash]
+    assert len(parents) == len(set(parents)), (
+        "two entries name the same parent - the chain forked under concurrent append"
+    )
+    roots = [e for e in entries if e.previous_entry_hash is None]
+    assert len(roots) == 1, f"a chain has exactly one origin, found {len(roots)}"
+
+    # Structural: walking from the origin must reach every row that exists.
+    by_parent = {e.previous_entry_hash: e for e in entries}
+    walked, cursor = 0, by_parent.get(None)
+    while cursor is not None:
+        walked += 1
+        cursor = by_parent.get(cursor.entry_hash)
+    assert walked == len(entries), (
+        f"walked {walked} of {len(entries)} entries; the rest are unreachable from the origin"
+    )
+    ledger.dispose()

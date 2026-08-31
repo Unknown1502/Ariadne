@@ -351,6 +351,62 @@ it is a genuine gap, not a presentation problem.
 
 ## Assessment
 
+### F12 — The hash chain forked again, under concurrency this time · **CRITICAL** · fixed in code, not yet migrated
+
+Found by opening the deployed console and reading it, which is a method worth naming: F10
+was found by asserting what a script *printed*, and F12 was found by looking at what the
+product *displays*. The lineage page said `Hash chain BROKEN`, and the ledger's own
+integrity check disagreed — `/api/v1/runtime` reported `lineage_chain_broken_rows: []`.
+
+Both were right. They check different things. The ledger verifies row hashes; the lineage
+view walks parent links within one claim family. The rows were individually untampered, and
+the *shape* was wrong:
+
+```
+2f6  prev dd6
+aef  prev 2f6   <-- two entries
+ea6  prev 2f6   <-- naming one parent
+```
+
+Three entries shared the timestamp `22:11:30.738861`. This is **not** F10 recurring: F10 was
+`_chain_tail` mis-ordering a tied batch, and that fix holds. This is the read and the write
+being two separate statements. Two workers called `lineage_for_family`, both received the
+same tail, both computed `hash_chain(tail, ...)`, and both inserted. Nothing in the schema
+said they could not, so nothing stopped them.
+
+The consequence is worse than a cosmetic banner. A forked chain has a branch that is
+unreachable from the origin, so an entire line of history can be removed and a walk from the
+root will never notice it is gone. Tamper-evidence — the property the append-only ledger
+exists to provide — silently weakens, in the exact structure this project points at when it
+claims history cannot be rewritten.
+
+**Fix.** The invariant is "within a claim family, at most one entry names a given parent",
+and it is now a `UNIQUE (claim_family_id, chain_link)` constraint rather than a convention.
+Genesis carries an explicit `@genesis` sentinel because SQL treats NULLs as distinct, so a
+nullable parent column would still admit two competing first entries. `append_verdict` then
+retries on rejection: the loser re-reads the tail, finds the winner, recomputes its relation
+against the history that actually won, and chains onto it.
+
+**Verification.** `test_concurrent_appends_to_one_family_cannot_fork_the_chain` prepares
+everything that is not under test serially, then releases six threads from a barrier so
+their reads genuinely overlap. It asserts no parent is claimed twice, that exactly one origin
+exists, and that walking from that origin reaches every row. Removing the constraint makes it
+fail with `two entries name the same parent`; that was checked, not assumed.
+
+**Still open, and stated plainly:** this is fixed in the repository and **not** in the
+deployment. Applying it to the live database needs a migration that adds the column and
+repairs the existing forked rows, and creating the constraint against unrepaired data would
+fail. Attempting that hours before the deadline risked breaking a working demo to fix a
+banner, so the deployment still shows `BROKEN` and the demo video makes no chain-integrity
+claim.
+
+**What it says about the method.** Three of this project's four CRITICAL findings are the
+same species: a property asserted in prose that no mechanism enforced. F10 and F12 are the
+same *sentence* — "the history is an append-only chain" — failing twice, for unrelated
+reasons, because the sentence lived in a docstring instead of a constraint. The lesson is
+not "write more tests"; a passing suite, a clean type check and a clean lint all held
+throughout. It is that an invariant belongs where it can be violated.
+
 **Strongest:** the verifier's rule ordering. Putting validity, sample size, and stability
 *before* interpretation is what makes INCONCLUSIVE a real answer rather than a fallback, and
 the ablation shows removing it costs 3 false contradictions.
@@ -368,6 +424,9 @@ found everything here, and they are different questions:
    the service it modelled)
 3. *Does anything assert what this code prints?* (F10 — a 158-line script checked only for
    exit status, hiding a forked hash chain)
+4. *Does the running product agree with the tests?* (F12 — the deployed console reported a
+   broken chain that every local suite said was intact, because no test wrote to one family
+   from two threads at once)
 
 Each was worth asking separately, and the third only occurred to anyone after the first two
 stopped finding things. That is the argument for repeating this before submission rather than
