@@ -397,8 +397,77 @@ export interface ReceivedExplanation {
   received_at: string;
 }
 
+export interface RegisteredModel {
+  id: string;
+  model_id: string;
+  name: string;
+  provider: string;
+  connection_id: string;
+  current_version: string;
+  status: "CONFIGURING" | "READY" | "DISABLED";
+  output: {
+    score_path: string;
+    decision_path: string;
+    explanation_path: string;
+    validated_against: string;
+  };
+}
+
+export interface ReadinessCheck {
+  name: string;
+  passed: boolean;
+  detail: string;
+  blocker: string;
+}
+
+export interface Readiness {
+  model_id: string;
+  ready: boolean;
+  status: string;
+  checks: ReadinessCheck[];
+  blockers: string[];
+  checked_at: string;
+}
+
 export const api = {
   system: () => request<SystemInfo>("/api/v1/system"),
+
+  // -- model onboarding --------------------------------------------------------------
+
+  registeredModels: () =>
+    request<{ models: RegisteredModel[]; ready: number; total: number }>(
+      "/api/v1/registered-models",
+    ),
+
+  registerModel: (body: Record<string, unknown>) =>
+    request<RegisteredModel>("/api/v1/registered-models", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  /** Re-derived from live state on every call — never a stored flag. */
+  readiness: (id: string) =>
+    request<Readiness>(`/api/v1/registered-models/${id}/readiness`),
+
+  declareOutput: (id: string, body: Record<string, unknown>) =>
+    request<RegisteredModel>(`/api/v1/registered-models/${id}/output`, {
+      method: "PATCH",
+      body: JSON.stringify(body),
+    }),
+
+  validateOutput: (id: string, sampleResponse: Record<string, unknown>) =>
+    request<{ ok: boolean; checks: Array<{ name: string; passed: boolean; detail: string }> }>(
+      `/api/v1/registered-models/${id}/output/validate`,
+      { method: "POST", body: JSON.stringify({ sample_response: sampleResponse }) },
+    ),
+
+  deleteRegisteredModel: async (id: string) => {
+    const response = await fetch(`${BASE}/api/v1/registered-models/${id}`, {
+      method: "DELETE",
+    });
+    if (!response.ok) throw new Error(`${response.status} deleting ${id}`);
+  },
+
 
   // -- configuration -----------------------------------------------------------------
 

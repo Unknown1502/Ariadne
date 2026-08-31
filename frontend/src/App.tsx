@@ -35,6 +35,7 @@ import {
   useHashRoute,
 } from "./components/Shell";
 import { Debt, Fleet, Lineage, Runtime } from "./components/Panels";
+import { Models } from "./components/Models";
 import {
   Connections,
   ExplanationSources,
@@ -390,6 +391,7 @@ export default function App() {
 
       {view === "configure" && (
         <>
+          <Models />
           <Connections />
           <FeatureSemanticsPanel />
           <ExplanationSources onIngested={() => void refresh()} />
